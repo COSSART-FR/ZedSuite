@@ -135,6 +135,9 @@ export interface CreateProjectInput {
   hardwareVersion?: string;
   softwareVersion?: string;
   detectionResults?: any;
+  mapsSource?: "detector" | "ols" | "both" | "imported";
+  byteOrder?: "hilo" | "lohi";
+  olsEcuName?: string;
   vehicleBrand?: string;
   vehicleModel?: string;
   engineType?: string;
@@ -174,6 +177,9 @@ export async function createProject(input: CreateProjectInput): Promise<{
         ? input.detectionResults.total_maps
         : 0,
     detection_data: input.detectionResults ?? {},
+    maps_source: input.mapsSource,
+    byte_order: input.byteOrder,
+    ols_ecu_name: input.olsEcuName,
     vehicle_brand: input.vehicleBrand,
     vehicle_model: input.vehicleModel,
     engine_type: input.engineType,

@@ -14,7 +14,8 @@ Für einen Funktionswunsch oder eine Fehlermeldung: ein Issue auf [GitHub](https
 - EDC15VM: am Fahrzeug prüfen, ob die SVRL-Kennfelder wirklich aktiv sind, wenn der Detektor sie findet.
 - EDC16U31: bessere Erkennung, es fehlen noch einige EDC16U31-Dateien auf dem Prüfstand, um sie sauber abzuschließen (die 12x12-Familie bei 0x1D7xxx hat noch keinen Namen).
 - EDC16U1: Identifikation der Touareg-V10-Dateien, bei denen heute nur eine der beiden Steuergerätenummern gefunden wird (sechs Dateien auf dem Prüfstand).
-- XDF-Kompatibilität (TunerPro-Definitionsdateien, um Kennfeldlisten in diesem Format zu lesen und zu schreiben). Für später geplant, wenn ich die Zeit finde, mich damit zu befassen.
+- Der Import von Kennfeld-Definitionen (WinOLS-Projekte `.ols`, TunerPro-Dateien `.xdf`, JSON-Mappacks) ist **Beta**: Eine Datei, die der Detektor nicht kennt, lässt sich trotzdem öffnen, und die Kennfelder aus ihrer Definitionsdatei werden angezeigt und mit dem Projekt gespeichert. Bis alle Fälle abgedeckt sind, bleibt viel Arbeit: WinOLS-Versionen außer 5, Layouts, die dieser Leser noch nicht versteht, Achsen und Umrechnungen, die er anders liest, und Fehler, die noch zu finden sind. Eine Kennfeldliste als `.xdf` zu schreiben, gibt es noch nicht.
+- Die Hardware- und Softwarenummern von Dateien lesen, die ZedSuite nicht erkennt. Heute kommen diese Nummern vom Detektor der jeweiligen Steuergerätefamilie: Eine unbekannte Datei zeigt keine, weder im Importfenster noch im Projekt. Sie in jeder Datei zu finden, ist ein großes Stück Arbeit und für später geplant.
 
 ## Von Nutzern gewünscht, in Prüfung
 

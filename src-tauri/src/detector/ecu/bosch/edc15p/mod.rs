@@ -1176,6 +1176,9 @@ impl EDC15PDetector {
                                         codeblock_end_address: None,
                                         map_selector: None,
                                         rows_reversed: None,
+                                        x_axis_values: None,
+                                        y_axis_values: None,
+                                        external_source: None,
                                     };
 
                                     detected_addresses.insert(map_offset as u32);
@@ -2068,6 +2071,9 @@ impl EDC15PDetector {
                         codeblock_end_address: None,
                         map_selector: None,
                         rows_reversed: None,
+                        x_axis_values: None,
+                        y_axis_values: None,
+                        external_source: None,
                     };
 
                     detected_addresses.insert(map_start as u32);
@@ -2194,6 +2200,9 @@ impl EDC15PDetector {
                     codeblock_end_address: None,
                     map_selector: None,
                     rows_reversed: None,
+                    x_axis_values: None,
+                    y_axis_values: None,
+                    external_source: None,
                 };
 
                 detected_addresses.insert(map_start as u32);
@@ -2303,6 +2312,9 @@ impl EDC15PDetector {
                 codeblock_end_address: None,
                 map_selector: None,
                 rows_reversed: None,
+                x_axis_values: None,
+                y_axis_values: None,
+                external_source: None,
             };
 
             if already_claimed {
@@ -2511,6 +2523,9 @@ impl EDC15PDetector {
                                                             codeblock_end_address: None,
                                                             map_selector: None,
                                                             rows_reversed: None,
+                                                            x_axis_values: None,
+                                                            y_axis_values: None,
+                                                            external_source: None,
                                                         };
 
                                                         maps.push(smoke_map);
@@ -2558,6 +2573,9 @@ impl EDC15PDetector {
                                         codeblock_end_address: None,
                                         map_selector: None,
                                         rows_reversed: None,
+                                        x_axis_values: None,
+                                        y_axis_values: None,
+                                        external_source: None,
                                     };
 
                                     maps.push(smoke_map);

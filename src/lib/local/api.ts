@@ -12,7 +12,7 @@
 // the local app has no limits.
 
 import * as store from "./store";
-import { detectMaps, SUPPORTED_ECUS } from "./detector";
+import { detectMaps, importMapDefinitions, SUPPORTED_ECUS } from "./detector";
 import { type MappackDisplaySettings,
   buildWinolsMappack,
   serializeWinolsMappack,
@@ -59,7 +59,8 @@ export async function handleLocalApi(
       return ok({ limits: { max_files: 1000000, daily_upload: 1000000 } });
     }
     if (path === "/api/settings/public") {
-      return ok({ maxFileSizeMB: 10, siteName: "ZedSuite" });
+      // 42 Mo : un projet WinOLS (.ols) de 2 Mo à plusieurs versions dépasse 10 Mo
+      return ok({ maxFileSizeMB: 42, siteName: "ZedSuite" });
     }
     if (path === "/api/versioning/track-action") {
       return ok({ allowed: true, remaining: 1000000 });
@@ -99,6 +100,9 @@ export async function handleLocalApi(
         hardwareVersion: b.hardwareVersion,
         softwareVersion: b.softwareVersion,
         detectionResults: b.detectionResults,
+        mapsSource: b.mapsSource,
+        byteOrder: b.byteOrder,
+        olsEcuName: b.olsEcuName,
         vehicleBrand: b.vehicleBrand,
         vehicleModel: b.vehicleModel,
         engineType: b.engineType,
@@ -147,6 +151,9 @@ export async function handleLocalApi(
         date: fileRecord.date,
         notes: fileRecord.notes,
         detection_data: fileRecord.detection_data,
+        maps_source: fileRecord.maps_source,
+        byte_order: fileRecord.byte_order,
+        ols_ecu_name: fileRecord.ols_ecu_name,
         mappack_unlocked: true,
         mappack_exported: false,
         map_display_settings: fileRecord.map_display_settings || null,
@@ -271,10 +278,77 @@ export async function handleLocalApi(
       return ok({ success: true });
     }
 
+    // ── Définitions de maps importées (.xdf TunerPro, mappack JSON) ──
+    // Un binaire que le détecteur ne reconnaît pas s'ouvre quand même ; les
+    // maps viennent alors du fichier de définitions que l'utilisateur
+    // apporte ici. Elles s'ajoutent à celles déjà présentes et remplacent
+    // celles d'un import précédent du même format.
+    match = path.match(/^\/api\/files\/([^/]+)\/import-definitions$/);
+    if (match && m === "POST") {
+      const fileRecord = await store.getFile(match[1]);
+      if (!fileRecord) return error(404, "not_found");
+      const fileDataBase64 = body?.fileDataBase64;
+      const fileName = body?.fileName || "definitions";
+      if (typeof fileDataBase64 !== "string" || !fileDataBase64) {
+        return error(400, "bad_request");
+      }
+      const binary = await store.readBinary(match[1]);
+      if (!binary) return error(404, "no_binary_data");
+
+      let imported;
+      try {
+        imported = await importMapDefinitions({
+          fileDataBase64,
+          fileName,
+          romSize: binary.length,
+        });
+      } catch (e: any) {
+        return error(400, String(e?.message || e || "import_failed"));
+      }
+
+      const previous = typeof fileRecord.detection_data === "string"
+        ? JSON.parse(fileRecord.detection_data)
+        : (fileRecord.detection_data as any) || {};
+      const kept = (previous?.maps || []).filter(
+        (mp: any) => (mp?.external_source || null) !== imported.format
+      );
+      const results = {
+        ...previous,
+        success: true,
+        maps: [...kept, ...(imported.maps || [])],
+        total_maps: kept.length + (imported.maps?.length || 0),
+      };
+
+      const patch: any = {
+        detection_data: results,
+        maps_detected: results.total_maps,
+      };
+      // Un projet sans détecteur n'a que ces maps : son ordre des octets est
+      // celui que le fichier de définitions déclare, personne d'autre ne le
+      // sait. Un projet détecté garde le sien.
+      if (!fileRecord.byte_order && imported.byte_order && fileRecord.maps_source !== "detector") {
+        patch.byte_order = imported.byte_order;
+      }
+      await store.updateFile(match[1], patch);
+
+      return ok({
+        success: true,
+        format: imported.format,
+        imported: imported.maps?.length || 0,
+        replaced: (previous?.maps || []).length - kept.length,
+        byteOrder: patch.byte_order ?? fileRecord.byte_order ?? null,
+        detectionResults: results,
+      });
+    }
+
     match = path.match(/^\/api\/files\/([^/]+)\/redetect$/);
     if (match && m === "POST") {
       const fileRecord = await store.getFile(match[1]);
       if (!fileRecord) return error(404, "not_found");
+      // Maps venues du projet WinOLS : rien à re-détecter, on rend la liste telle quelle
+      if (fileRecord.maps_source === "ols" || fileRecord.maps_source === "imported") {
+        return ok({ success: true, detectionResults: fileRecord.detection_data, message: "WinOLS project maps kept" });
+      }
       const binary = await store.readBinary(match[1]);
       if (!binary) return error(404, "no_binary_data");
 
@@ -284,6 +358,20 @@ export async function handleLocalApi(
         fileName: fileRecord.original_name || fileRecord.file_name,
         ecuType: fileRecord.ecu_type || undefined,
       });
+
+      // Les maps venues d'un projet WinOLS ne se re-détectent pas (le .ols
+      // n'est plus là) : on les garde telles quelles à côté des nouvelles.
+      let previousOls: any[] = [];
+      try {
+        const prev = typeof fileRecord.detection_data === "string"
+          ? JSON.parse(fileRecord.detection_data)
+          : fileRecord.detection_data;
+        previousOls = (prev?.maps || []).filter((mp: any) => !!mp?.external_source);
+      } catch {}
+      if (previousOls.length > 0) {
+        results.maps = [...results.maps, ...previousOls];
+        results.total_maps = results.maps.length;
+      }
 
       await store.updateFile(match[1], {
         detection_data: results,
@@ -331,6 +419,19 @@ export async function handleLocalApi(
         return error(400, "no_maps");
       }
 
+      // Les définitions importées (projet WinOLS, .xdf, mappack .json)
+      // forment chacune leur propre mappack, à côté de celui du détecteur :
+      // l'export ne prend que celui demandé. « ols » reste accepté pour les
+      // appels d'avant, où tout ce qui était importé venait d'un .ols.
+      const want = String(body?.source || "detector");
+      const exportMaps = detection.maps.filter((mp) => {
+        const source = (mp as { external_source?: string }).external_source || null;
+        if (want === "detector") return !source;
+        if (want === "ols") return !!source;
+        return source === want;
+      });
+      if (exportMaps.length === 0) return error(400, "no_maps");
+
       // Tri : celui mémorisé avec le projet, sinon celui transmis par l'éditeur
       // (adresse/nom) — le mappack reprend l'ordre affiché dans la liste des maps
       const requested = fileRecord.map_sort_mode || body?.sortMode;
@@ -343,14 +444,17 @@ export async function handleLocalApi(
           ? (fileRecord.map_display_settings as Record<string, MappackDisplaySettings>)
           : undefined;
       const pack = buildWinolsMappack(
-        detection.maps,
+        exportMaps,
         fileRecord.ecu_type || "",
         sortMode,
         displaySettings
       );
       const bytes = serializeWinolsMappack(pack);
+      // Le nom porte le format quand les maps viennent d'un fichier de
+      // définitions : sans ça, deux mappacks du même projet s'écraseraient.
+      const baseName = fileRecord.project_name || fileRecord.file_name || "project";
       const fileName = mappackFileName(
-        fileRecord.project_name || fileRecord.file_name || "project"
+        want === "detector" ? baseName : `${baseName} ${want.toUpperCase()}`
       );
 
       return {

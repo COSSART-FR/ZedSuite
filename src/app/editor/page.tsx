@@ -30,6 +30,8 @@ import {
   ArrowLeftRight,
   PanelLeftClose,
   PanelLeftOpen,
+  Search,
+  FileUp,
 } from "lucide-react";
 import { PiHeadCircuit } from "react-icons/pi";
 import { HexdumpViewer, type MapRegion } from "@/components/hexdump-viewer";
@@ -65,7 +67,7 @@ import { MappackExportModal } from "@/components/mappack-export-modal";
 import { MODAL_GLASS, MODAL_GLASS_LIGHT, TOAST_GLASS, TOAST_GLASS_LIGHT } from "@/lib/modal-glass";
 import { StyledSelect } from "@/components/styled-select";
 import { formatEcuWithManufacturer } from "@/lib/ecu-manufacturer";
-import { isBigEndianEcu } from "@/lib/ecu-endianness";
+import { isBigEndianEcu, setProjectByteOrder, setProjectEcuType, projectIsBigEndian } from "@/lib/ecu-endianness";
 import { resolveMapCellLayout, resolveAxisSources } from "@/lib/map-cell-layout";
 import {
   applyDisplayOverrides,
@@ -82,7 +84,7 @@ import { PromptModal } from "@/components/prompt-modal";
 import { correctChecksumByEcuType, isChecksumSupported, ChecksumResult } from "@/lib/ecu/bosch/checksums";
 import { disableDTC, enableDTC, detectDTCs, type DetectedDTC, type CodeblockInfo } from "@/lib/ecu/bosch/dtc";
 import { saveBytesToFile } from "@/lib/local/save-file";
-import { identifyEcu, bytesToBase64, detectorVersion, detectMaps } from "@/lib/local/detector";
+import { identifyEcu, bytesToBase64, detectorVersion, detectMaps, inspectOlsContainer, extractOlsVersion } from "@/lib/local/detector";
 import * as localStore from "@/lib/local/store";
 import { ThemeProvider, useTheme } from "@/contexts/theme-context";
 import { useSettings } from "@/contexts/settings-context";
@@ -138,6 +140,13 @@ interface MapData {
   y_axis_inverted?: boolean;
   // Lignes fichier dans l'ordre inverse de l'axe Y (bloc Duration de certains EDC16)
   rows_reversed?: boolean;
+  /** « OLS », « XDF » ou « JSON » : map venue d'un fichier de définitions
+   *  importé, et non du détecteur. */
+  external_source?: string | null;
+  /** Points d'axe écrits dans le fichier de définitions au lieu d'être lus
+   *  dans le binaire (axe fixe d'un XDF). */
+  x_axis_values?: number[] | null;
+  y_axis_values?: number[] | null;
 }
 
 interface ProjectData {
@@ -158,6 +167,13 @@ interface ProjectData {
   notes?: string;
   hardware_version?: string;
   software_version?: string;
+  /** D'où viennent les maps : « ols » = projet WinOLS d'un calculateur sans
+   *  détecteur, « imported » = binaire non reconnu dont les maps viennent
+   *  d'un fichier de définitions (.xdf, mappack .json) apporté par
+   *  l'utilisateur. Dans les deux cas il n'y a pas de détecteur derrière. */
+  maps_source?: "detector" | "ols" | "both" | "imported";
+  /** Ordre des octets déclaré par le projet WinOLS */
+  byte_order?: "hilo" | "lohi";
   created?: string;
   detectionResults: {
     maps: MapData[];
@@ -278,7 +294,10 @@ const getDefaultMapDisplaySettings = (map: MapData): MapDisplaySettings => {
     width,
     height,
     wordSize: dataType.includes('8') ? '8b' : '16b',
-    dataOrganization: littleEndian ? 'LoHi' : 'HiLo',
+    // Ordre réel : le drapeau de la map, sinon celui du projet (déclaré par un
+    // projet WinOLS, sinon déduit de la famille d'ECU). Champ informatif : il
+    // affichait HiLo pour tout le monde, y compris les EDC15 little-endian.
+    dataOrganization: littleEndian || !projectIsBigEndian() ? 'LoHi' : 'HiLo',
     signed: dataType === 'Int16' || dataType === 'Int8',
     factor: cellFactor,
     offset: map.offset ?? 0,
@@ -1990,6 +2009,8 @@ function EditorPageContent() {
     });
   };
   const [hasAnimatedMappack, setHasAnimatedMappack] = useState(false);
+  // Recherche dans la liste des maps (les deux mappacks) : nom ou adresse
+  const [mapSearch, setMapSearch] = useState("");
   const [versions, setVersions] = useState<VersionDto[]>([]);
   const [currentVersionId, setCurrentVersionId] = useState<string | null>(null);
   const [showVersionDropdown, setShowVersionDropdown] = useState(false);
@@ -2143,10 +2164,15 @@ function EditorPageContent() {
   // = big-endian EDC16/MJD, LoHi = EDC15), basculable dans la toolbar.
   const [hexdumpByteOrder, setHexdumpByteOrder] = useState<"hilo" | "lohi">("lohi");
   useEffect(() => {
+    // Un projet WinOLS déclare son ordre des octets : il prime sur la règle par type d'ECU
+    setProjectByteOrder(projectData?.byte_order ?? null);
+    setProjectEcuType(projectData?.ecu_type ?? null);
     if (projectData?.ecu_type) {
       setHexdumpByteOrder(isBigEndianEcu(projectData.ecu_type) ? "hilo" : "lohi");
     }
-  }, [projectData?.ecu_type]);
+  }, [projectData?.ecu_type, projectData?.byte_order]);
+  // Projet refermé : la règle par type d'ECU reprend la main
+  useEffect(() => () => { setProjectByteOrder(null); setProjectEcuType(null); }, []);
   const [hexdumpFormat, setHexdumpFormat] = useState<"hex" | "dec">("hex");
 
   // Largeur de fenêtre hexdump calée sur son contenu réel (adresse + valeurs +
@@ -2755,7 +2781,24 @@ function EditorPageContent() {
       try {
         // Lire le fichier
         const arrayBuffer = await file.arrayBuffer();
-        const uint8Array = new Uint8Array(arrayBuffer);
+        let uint8Array = new Uint8Array(arrayBuffer);
+        // Projet WinOLS : importer les octets de la version qu'il contient.
+        // Plusieurs versions = ambigu ici, ça se fait à la création d'un projet,
+        // qui laisse choisir laquelle est l'original.
+        try {
+          const olsInfo = await inspectOlsContainer(bytesToBase64(uint8Array));
+          if (olsInfo) {
+            if (olsInfo.versions.length > 1) {
+              toast({ title: t.errors.importError, description: t.errors.olsImportMultiVersion, variant: "destructive" });
+              setLoadingAction(null);
+              return;
+            }
+            const b64 = await extractOlsVersion(bytesToBase64(uint8Array), olsInfo.versions[0].index);
+            uint8Array = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+          }
+        } catch {
+          // pas un conteneur .ols lisible : le fichier est traité tel quel
+        }
         const fileData = Array.from(uint8Array);
 
         // Garde anti-fichier étranger : un binaire qui ne provient pas du même
@@ -4047,6 +4090,10 @@ function EditorPageContent() {
   useEffect(() => {
     const fileId = projectData?.fileId;
     if (!fileId || !projectData.detectionResults) return;
+    // Maps venues d'un projet WinOLS ou d'un fichier de définitions importé :
+    // il n'y a pas de détecteur pour ce calculateur, rien à re-détecter (ça
+    // viderait la liste).
+    if (projectData.maps_source === "ols" || projectData.maps_source === "imported") return;
     if (hasUnsavedChanges) return; // ne jamais écraser un travail en cours
     if (redetectCheckedRef.current === fileId) return;
 
@@ -4465,8 +4512,98 @@ function EditorPageContent() {
 
   /** Ouvre la fenêtre de puissance sur le projet courant, avec la liste de
    *  maps de l'éditeur (celle du store peut être en retard d'une détection). */
+  /** Maps venues d'un projet WinOLS d'un calculateur non pris en charge :
+   *  les solutions, les codes défaut et l'estimation de puissance reposent
+   *  tous sur des maps nommées par le détecteur ZedSuite, qui n'existent pas
+   *  ici. On le dit au lieu d'ouvrir une fenêtre vide. */
+  /** Import d'un fichier de définitions de maps (.xdf TunerPro ou mappack
+   *  .json) : c'est ainsi qu'un binaire que le détecteur ne reconnaît pas
+   *  finit par montrer des maps. Elles rejoignent le projet dans leur propre
+   *  mappack et y restent (elles sont écrites dans le projet, pas seulement
+   *  affichées). Un nouvel import du même format remplace le précédent. */
+  const definitionsInputRef = useRef<HTMLInputElement | null>(null);
+  const [isImportingDefinitions, setIsImportingDefinitions] = useState(false);
+
+  const importDefinitionsFile = async (file: File) => {
+    if (!projectData?.fileId) return;
+    setIsImportingDefinitions(true);
+    try {
+      const buffer = new Uint8Array(await file.arrayBuffer());
+      const chunks: string[] = [];
+      for (let i = 0; i < buffer.length; i += 8192) {
+        chunks.push(String.fromCharCode(...buffer.subarray(i, i + 8192)));
+      }
+      const response = await axios.post(
+        `/api/files/${projectData.fileId}/import-definitions`,
+        { fileDataBase64: btoa(chunks.join("")), fileName: file.name },
+      );
+      const imported = Number(response.data?.imported ?? 0);
+      if (imported === 0) {
+        toast({
+          title: t.errors.importDefinitionsFailed,
+          description: t.errors.importDefinitionsEmpty,
+          variant: "destructive",
+        });
+        return;
+      }
+      const results = response.data?.detectionResults;
+      const byteOrder = response.data?.byteOrder as "hilo" | "lohi" | undefined;
+      setProjectData((prev) => {
+        if (!prev) return prev;
+        const updated = {
+          ...prev,
+          detectionResults: results ?? prev.detectionResults,
+          ...(byteOrder ? { byte_order: byteOrder } : {}),
+        };
+        saveProjectToSession(updated);
+        return updated;
+      });
+      if (byteOrder) setProjectByteOrder(byteOrder);
+      clearMapDataCache();
+      toast({
+        title: t.sidebar.importDefinitions,
+        description: (t.upload?.importDefinitionsDone || "{count} map(s) imported from the {format} file")
+          .replace("{count}", String(imported))
+          .replace("{format}", String(response.data?.format || "")),
+      });
+    } catch (error: any) {
+      toast({
+        title: t.errors.importDefinitionsFailed,
+        description: t.errors.importDefinitionsFailedDescription,
+        variant: "destructive",
+      });
+    } finally {
+      setIsImportingDefinitions(false);
+    }
+  };
+
+  const olsProjectBlocked = (): boolean => {
+    const source = projectData?.maps_source;
+    if (source !== "ols" && source !== "imported") return false;
+    toast({
+      title: t.errors.olsNotCompatible,
+      description:
+        source === "ols"
+          ? t.errors.olsNotCompatibleDescription
+          : t.errors.notDetectedNotCompatibleDescription,
+      variant: "destructive",
+    });
+    return true;
+  };
+
+  const openSolutions = () => {
+    if (!mappackUnlocked || olsProjectBlocked()) return;
+    setIsSolutionsOpen(true);
+  };
+
+  const openDtcCodes = () => {
+    if (!mappackUnlocked || olsProjectBlocked()) return;
+    setIsDTCOpen(true);
+  };
+
   const openPowerEstimate = async () => {
     if (!projectData?.fileId) return;
+    if (olsProjectBlocked()) return;
     try {
       const record = await localStore.getFile(projectData.fileId);
       if (!record) return;
@@ -5020,12 +5157,17 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
   const [isMappackExportModalOpen, setIsMappackExportModalOpen] = useState(false);
   const [isMappackExportModalClosing, setIsMappackExportModalClosing] = useState(false);
   const [isExportingMappack, setIsExportingMappack] = useState(false);
+  // Quel mappack part à l'export : « detector » pour celui de l'app, sinon
+  // le format du fichier de définitions dont il vient (« OLS », « XDF »,
+  // « JSON »). Chaque racine de l'arbre exporte la sienne.
+  const [mappackExportSource, setMappackExportSource] = useState<string>("detector");
   const [isMappackExportComplete, setIsMappackExportComplete] = useState(false);
 
   // Toolbar button: validate then show the confirmation modal
   // (same style/flow as the checksum export modal)
-  const handleExportMappack = () => {
+  const handleExportMappack = (source: string = "detector") => {
     if (isExportingMappack) return;
+    setMappackExportSource(source);
     if (!projectData?.fileId) {
       toast({ title: t.toolbar.exportMappackError, variant: "destructive" });
       return;
@@ -5062,7 +5204,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // sortMode : l'export reprend l'ordre courant de la liste des maps
-        body: JSON.stringify({ fileId: projectData.fileId, sortMode: mapSortMode }),
+        body: JSON.stringify({ fileId: projectData.fileId, sortMode: mapSortMode, source: mappackExportSource }),
       });
 
       if (!response.ok) {
@@ -6221,9 +6363,39 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
     return !isLaunchControlActive(data as unknown as number[], yAxis);
   };
 
-  const groupedMaps = projectData?.detectionResults?.maps?.reduce((acc, map) => {
+  /** Recherche de la barre du haut : sur le nom de la map et sur son adresse
+   *  en hexadécimal, la même que celle affichée devant chaque ligne. */
+  const mapSearchTerm = mapSearch.trim().toLowerCase();
+  const matchesMapSearch = (map: MapData) => {
+    if (!mapSearchTerm) return true;
+    const name = (map.name || "").toLowerCase();
+    const addr = (map.address || 0).toString(16).toLowerCase();
+    return name.includes(mapSearchTerm) || addr.includes(mapSearchTerm.replace(/^0x/, ""));
+  };
+
+  /** Projet sans détecteur derrière lui : les maps viennent du projet WinOLS
+   *  ouvert, ou d'un fichier de définitions que l'utilisateur a importé. */
+  const detectorlessProject =
+    projectData?.maps_source === "ols" || projectData?.maps_source === "imported";
+
+  /** Le bouton d'import n'a de sens que là où le détecteur n'a rien à dire :
+   *  un calculateur qu'il ne connaît pas, ou un binaire sur lequel il n'a
+   *  trouvé aucune map. Sur un projet détecté normalement, il n'apparaît pas.
+   */
+  const canImportDefinitions =
+    !!projectData?.fileId &&
+    (detectorlessProject || (projectData?.detectionResults?.maps?.length ?? 0) === 0);
+
+  /** Maps lues dans un fichier de définitions (projet WinOLS, .xdf TunerPro,
+   *  mappack .json) : elles vivent dans leur propre mappack, à côté de celui
+   *  du détecteur. */
+  const externalSourceOf = (map: MapData) => map.external_source || null;
+  const isExternalMap = (map: MapData) => !!externalSourceOf(map);
+
+  const groupedMaps = projectData?.detectionResults?.maps?.filter((m) => !isExternalMap(m)).reduce((acc, map) => {
     if (isLimpMap(map.name)) return acc;
     if (isInactiveLaunchControl(map)) return acc;
+    if (!matchesMapSearch(map)) return acc;
     // Insensible à la casse : les anciens projets stockent « VCDS Diagnostic »,
     // le détecteur écrit désormais « VCDS diagnostic » (D minuscule).
     const folder = (map.subcategory || "").toLowerCase() === "vcds diagnostic"
@@ -6256,6 +6428,52 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
     return a.localeCompare(b);
   });
 
+  // Mêmes regroupement et tri pour les maps du projet WinOLS
+  /** Un mappack par format de définitions importé : le projet WinOLS, le
+   *  .xdf TunerPro et le mappack .json ont chacun leur racine dans l'arbre,
+   *  à côté de celle du détecteur. Dans chaque racine, les maps sont rangées
+   *  dans leurs dossiers comme celles de l'app. */
+  const externalMappacks = (() => {
+    const bySource = new Map<string, Record<string, MapData[]>>();
+    for (const map of projectData?.detectionResults?.maps || []) {
+      const source = externalSourceOf(map);
+      if (!source) continue;
+      if (!matchesMapSearch(map)) continue;
+      const folders = bySource.get(source) || {};
+      const folder = map.category || source;
+      if (!folders[folder]) folders[folder] = [];
+      folders[folder].push(map);
+      bySource.set(source, folders);
+    }
+    const sortMaps = (maps: MapData[]) =>
+      [...maps].sort((a, b) => {
+        if (mapSortMode === "name" || mapSortMode === "name-desc") {
+          const byName = (a.name || "").localeCompare(b.name || "");
+          if (byName !== 0) return mapSortMode === "name-desc" ? -byName : byName;
+        }
+        return (a.address || 0) - (b.address || 0);
+      });
+    // « Other » en bas, comme dans le mappack de l'app
+    const sortFolders = (folders: string[]) =>
+      folders.sort((a, b) => {
+        if (a === "Other") return 1;
+        if (b === "Other") return -1;
+        return a.localeCompare(b);
+      });
+    return [...bySource.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([source, folders]) => ({
+        source,
+        // « Mappack OLS », « Mappack XDF », « Mappack JSON »
+        label: `${t.sidebar.mappack} ${source}`,
+        folders: sortFolders(Object.keys(folders)),
+        grouped: Object.entries(folders).reduce((acc, [folder, maps]) => {
+          acc[folder] = sortMaps(maps);
+          return acc;
+        }, {} as Record<string, MapData[]>),
+      }));
+  })();
+
   const currentVersionName =
     versions.find((v) => v.id === currentVersionId)?.name ||
     (versions[0]?.name ?? "Ori");
@@ -6287,6 +6505,266 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
     );
   }
 
+  /** Une racine de l'arbre des maps : celle du détecteur ZedSuite, et,
+   *  pour un projet WinOLS qui en apporte, celle de ses propres maps.
+   *  Même rendu pour les deux ; seul le mappack de l'app porte le badge
+   *  de complétude (les règles n'ont pas de sens sur une liste écrite à
+   *  la main dans WinOLS). */
+  const renderMappackRoot = (
+    rootKey: string,
+    rootLabel: string,
+    folders: string[],
+    grouped: Record<string, MapData[]>,
+    showHealth: boolean,
+  ) => (
+            <div key={rootKey}>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => toggleFolder(rootKey)}
+                  className={`flex items-center gap-2 flex-1 min-w-0 px-2 py-1.5 rounded ${theme === 'light' ? 'hover:bg-black/5' : 'hover:bg-white/5'} transition-colors group`}
+                >
+                  <ChevronRight className={`w-4 h-4 transition-transform duration-200 ${expandedFolders.has(rootKey) ? "rotate-90" : ""}`} style={{ color: getTextColor() }} />
+                  {expandedFolders.has(rootKey) ? (
+                    <FolderOpen className={`w-4 h-4 transition-colors ${theme === 'light' ? 'text-amber-600' : 'text-yellow-500'}`} />
+                  ) : (
+                    <Folder className={`w-4 h-4 transition-colors ${theme === 'light' ? 'text-amber-600' : 'text-yellow-500'}`} />
+                  )}
+                  <span className="text-sm" style={{ color: theme === 'light' ? '#000000' : 'rgba(255, 255, 255, 0.7)' }}>{rootLabel}</span>
+                </button>
+                {/* État du mappack : % de règles de complétude satisfaites
+                    (EDC16). Vert = tout est là, orange = maps manquantes.
+                    Clic → fenêtre d'explication détaillée. */}
+                {showHealth && mappackConfidence !== null && (
+                  <button
+                    onClick={() => setShowMappackHealth(true)}
+                    title={t.mappackHealth.title}
+                    className={`flex-shrink-0 px-1.5 h-5 flex items-center rounded-full text-[10px] font-semibold tabular-nums transition-colors ${
+                      missingExpected.length === 0
+                        ? (theme === 'light' ? 'bg-emerald-500/20 text-emerald-700 hover:bg-emerald-500/35' : 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/30')
+                        : (theme === 'light' ? 'bg-orange-500/20 text-orange-700 hover:bg-orange-500/35' : 'bg-orange-500/15 text-orange-400 hover:bg-orange-500/30')
+                    }`}
+                  >
+                    {mappackConfidence}%
+                  </button>
+                )}
+                {/* Cycle du tri des maps dans les dossiers : adresse → nom A→Z
+                    → nom Z→A. L'icône montre le mode ACTIF ; le title annonce
+                    le mode suivant. */}
+                {mappackUnlocked && (
+                  <button
+                    onClick={toggleMapSortMode}
+                    title={
+                      mapSortMode === "address"
+                        ? t.sidebar.sortByName
+                        : mapSortMode === "name"
+                          ? t.sidebar.sortByNameDesc
+                          : t.sidebar.sortByAddress
+                    }
+                    className={`flex-shrink-0 h-6 w-6 flex items-center justify-center rounded-md transition-colors ${
+                      theme === 'light' ? 'hover:bg-black/10' : 'hover:bg-white/10'
+                    }`}
+                    style={{ color: theme === 'light' ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.55)' }}
+                  >
+                    {mapSortMode === "address" ? (
+                      <ArrowDown01 className="w-4 h-4" />
+                    ) : mapSortMode === "name" ? (
+                      <ArrowDownAZ className="w-4 h-4" />
+                    ) : (
+                      <ArrowDownZA className="w-4 h-4" />
+                    )}
+                  </button>
+                )}
+                {/* Export mappack (WinOLS JSON) - contextual to the Mappack tree.
+                    Collapsed to the icon; the label slides out on hover, and
+                    for 2s when the mappack gets unlocked (discovery hint). */}
+                {mappackUnlocked && (
+                  <button
+                    onClick={() =>
+                      handleExportMappack(
+                        rootKey.startsWith("external:") ? rootKey.slice("external:".length) : "detector",
+                      )
+                    }
+                    title={t.toolbar.exportMappack}
+                    className={`group flex-shrink-0 flex items-center px-2 py-0.5 mr-1 rounded-md bg-gradient-to-r from-red-600 via-red-500 to-orange-500 text-xs font-medium ${theme === 'light' ? 'text-black' : 'text-white'}`}
+                  >
+                    <FileJson className={`w-3.5 h-3.5 flex-shrink-0 ${theme === 'light' ? 'text-black' : 'text-white'}`} />
+                    <span
+                      className={`overflow-hidden whitespace-nowrap transition-all duration-300 group-hover:max-w-[80px] group-hover:opacity-100 group-hover:ml-1.5 ${
+                        mappackExportHint ? 'max-w-[80px] opacity-100 ml-1.5' : 'max-w-0 opacity-0 ml-0'
+                      }`}
+                    >
+                      {t.sidebar.exportMappackShort}
+                    </span>
+                  </button>
+                )}
+              </div>
+
+              {/* Unlock Mappack Button - shown when locked */}
+              {!mappackUnlocked && expandedFolders.has(rootKey) && (
+                <div className="ml-6 mt-2 mb-2">
+                  <button
+                    onClick={handleUnlockMappack}
+                    disabled={mappackUnlocking}
+                    className={`w-full relative overflow-hidden rounded-xl backdrop-blur-md border px-4 py-2.5 flex items-center justify-center gap-2.5 transition-all duration-500 ${
+                      mappackUnlocking ? 'opacity-60 cursor-wait' : 'hover:scale-[1.02] hover:shadow-xl'
+                    } ${
+                      theme === 'light'
+                        ? 'bg-gradient-to-r from-red-600/90 via-red-500/90 to-orange-500/90 border-red-500/50 hover:shadow-red-500/30'
+                        : 'bg-gradient-to-r from-red-600/90 via-red-500/90 to-orange-500/90 border-white/10 hover:shadow-red-500/30'
+                    }`}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: theme === 'light' ? '#000' : '#fff' }}>
+                        <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                      </svg>
+                    <span className="font-medium text-sm" style={{ color: theme === 'light' ? '#000' : '#fff' }}>
+                      {mappackUnlocking ? (t.mappack?.unlocking || "Unlocking...") : (t.mappack?.unlock || "Unlock Mappack")}
+                    </span>
+                  </button>
+                </div>
+              )}
+
+              <div className={`overflow-hidden transition-all duration-300 ease-in-out ${
+                expandedFolders.has(rootKey) || mapSearchTerm ? "max-h-[20000px] opacity-100" : "max-h-0 opacity-0"
+              }`}>
+                <div className={`ml-1 mt-1 space-y-1 ${mappackJustUnlocked ? 'mappack-unlock-anim' : ''}`}>
+                  {folders.map((folder) => {
+                    const maps = grouped[folder] || [];
+                    // Vérifier si au moins une map dans ce dossier a été modifiée
+                    // (cells modifications OR axis-label edits)
+                    // Nombre de cartes modifiées du dossier : affiché « X / Y »
+                    // dans le compteur (X en dégradé rouge), Y seul si aucune
+                    const folderModifiedCount = mappackUnlocked
+                      ? maps.filter(
+                          map => allMapModifications.has(map.address) || mapAxisLabels.has(map.address)
+                        ).length
+                      : 0;
+                    const folderHasModifiedMap = folderModifiedCount > 0;
+                    const folderTextColor = !mappackUnlocked
+                      ? (theme === 'light' ? 'rgba(0, 0, 0, 0.4)' : 'rgba(255, 255, 255, 0.4)')
+                      : (theme === 'light' ? '#000000' : 'rgba(255, 255, 255, 0.7)');
+                    // Le compteur garde toujours sa couleur normale
+                    const folderCountColor = theme === 'light' ? 'rgba(0, 0, 0, 0.4)' : 'rgba(255, 255, 255, 0.4)';
+                    return (
+                      <div key={folder}>
+                        <button
+                          onClick={() => toggleFolder(folder)}
+                          className={`flex items-center gap-2 w-full px-2 py-1.5 rounded transition-colors group ${
+                            !mappackUnlocked
+                              ? 'cursor-not-allowed opacity-60'
+                              : (theme === 'light' ? 'hover:bg-black/5' : 'hover:bg-white/5')
+                          }`}
+                        >
+                          {mappackUnlocked ? (
+                            <ChevronRight className={`w-3 h-3 transition-transform duration-200 ${expandedFolders.has(folder) ? "rotate-90" : ""}`} style={{ color: getTextColor() }} />
+                          ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: theme === 'light' ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)' }}>
+                              <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+                              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                            </svg>
+                          )}
+                          {expandedFolders.has(folder) ? (
+                            <FolderOpen className={`w-3 h-3 transition-colors ${theme === 'light' ? 'text-amber-600' : 'text-yellow-500'}`} />
+                          ) : (
+                            <Folder className={`w-3 h-3 transition-colors ${theme === 'light' ? 'text-amber-600' : 'text-yellow-500'}`} />
+                          )}
+                          <span
+                            className={`text-xs ${folderHasModifiedMap ? (theme === 'light' ? MODIFIED_TEXT_GRADIENT_LIGHT : MODIFIED_TEXT_GRADIENT_DARK) : ''}`}
+                            style={folderHasModifiedMap ? undefined : { color: folderTextColor }}
+                          >{folder}</span>
+                          <span
+                            className="text-[10px] ml-auto px-1.5 rounded-full border tabular-nums text-center"
+                            style={{
+                              color: folderCountColor,
+                              backgroundColor: theme === 'light' ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.045)',
+                              borderColor: getBorderColor(),
+                              minWidth: '26px'
+                            }}
+                          >
+                            {folderHasModifiedMap && (
+                              <>
+                                <span className={`${theme === 'light' ? MODIFIED_TEXT_GRADIENT_LIGHT : MODIFIED_TEXT_GRADIENT_DARK} font-semibold`}>
+                                  {folderModifiedCount}
+                                </span>
+                                <span className="mx-0.5 opacity-60">/</span>
+                              </>
+                            )}
+                            {maps.length}
+                          </span>
+                        </button>
+
+                        <div className={`overflow-hidden transition-all duration-300 ease-in-out ${
+                          expandedFolders.has(folder) || mapSearchTerm ? "max-h-[20000px] opacity-100" : "max-h-0 opacity-0"
+                        }`}>
+                          <div className="ml-1 mt-1 space-y-0.5">
+                            {maps.map((map, index) => {
+                              const isOpen = openMaps.some((openMap) => openMap.address === map.address);
+                              const isModified = allMapModifications.has(map.address) || mapAxisLabels.has(map.address);
+                              // Use codeblock_id directly from backend
+                              const edcsuiteCodeblockId = map.codeblock_id || null;
+
+                              // Texte : dégradé du logo si modifié (bg-clip-text), sinon normal.
+                              // L'icône (SVG currentColor) ne peut pas prendre le dégradé -> rouge uni.
+                              const modifiedGradient = theme === 'light' ? MODIFIED_TEXT_GRADIENT_LIGHT : MODIFIED_TEXT_GRADIENT_DARK;
+                              const textColor = isModified
+                                ? '#ef4444' // icône + fallback sans adresse
+                                : (theme === 'light' ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.7)');
+                              const textColorStrong = theme === 'light' ? 'rgba(0, 0, 0, 0.9)' : 'rgba(255, 255, 255, 0.9)';
+                              const textColorMuted = theme === 'light' ? 'rgba(0, 0, 0, 0.5)' : 'rgba(255, 255, 255, 0.5)';
+
+                              return (
+                                <button
+                                  key={index}
+                                  onClick={() => handleMapClick(map)}
+                                  onContextMenu={(e) => {
+                                    e.preventDefault();
+                                    setMapTreeContextMenu({ x: e.clientX, y: e.clientY, map });
+                                  }}
+                                  className={`flex items-center gap-2 w-full px-2 py-1.5 rounded text-left transition-colors focus:outline-none ${
+                                    isOpen
+                                      // Clair + modifiée : fond rouge plus léger sous le texte rouge
+                                      ? (theme === 'light' && isModified ? "bg-primary/10" : "bg-primary/20")
+                                      : (theme === 'light' ? 'hover:bg-black/5' : 'hover:bg-white/5')
+                                  }`}
+                                  style={{ color: textColor }}
+                                >
+                                  <FileText className="w-3 h-3 flex-shrink-0" />
+                                  <span className="text-xs truncate flex-1">
+                                    {map.address ? (
+                                      <>
+                                        <span className={`font-mono ${isModified ? modifiedGradient : ''}`} style={isModified ? undefined : { color: getTextColor() }}>{map.address.toString(16).toUpperCase()}</span>
+                                        <span className={`mx-1 ${isModified ? modifiedGradient : ''}`} style={isModified ? undefined : { color: textColor }}>-</span>
+                                        <span className={isModified ? modifiedGradient : ''} style={isModified ? undefined : { color: textColorStrong }}>{map.name || `Map ${index + 1}`}</span>
+                                        {edcsuiteCodeblockId !== null && (
+                                          <span className={`ml-1 ${isModified ? modifiedGradient : ''}`} style={isModified ? undefined : { color: textColorMuted }}>[codeblock {edcsuiteCodeblockId}]</span>
+                                        )}
+                                      </>
+                                    ) : (
+                                      map.name || `Map ${index + 1}`
+                                    )}
+                                  </span>
+                                  {/* Map dimensions - aligned right like folder count */}
+                                  {map.dimensions && (
+                                    <span className="text-xs font-mono flex-shrink-0" style={{ color: theme === 'light' ? 'rgba(0, 0, 0, 0.4)' : 'rgba(255, 255, 255, 0.4)' }}>
+                                      {map.dimensions.TwoDimensional
+                                        ? `${map.dimensions.TwoDimensional.cols}x${map.dimensions.TwoDimensional.rows}`
+                                        : map.dimensions.OneDimensional
+                                          ? `${map.dimensions.OneDimensional.length}x1`
+                                          : ''}
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+  );
   return (
     <div className="flex h-screen overflow-hidden relative" style={{ background: getBackgroundColor() }}>
       {wallpaperLayer}
@@ -6332,7 +6810,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
             <div className="flex flex-col items-center gap-2 mt-2">
               <button
                 type="button"
-                onClick={() => { if (mappackUnlocked) setIsSolutionsOpen(true); }}
+                onClick={openSolutions}
                 disabled={!mappackUnlocked}
                 title={t.sidebar.solutions}
                 className={`relative overflow-hidden rounded-lg backdrop-blur-md border w-9 h-9 flex items-center justify-center transition-all duration-300 ${!mappackUnlocked ? 'opacity-40 cursor-not-allowed' : 'hover:scale-105 hover:shadow-xl'} ${theme === 'light' ? 'bg-gradient-to-l from-red-600 via-red-500 to-orange-500 border-black/10 hover:shadow-red-600/35' : 'bg-gradient-to-l from-red-600/90 via-red-500/90 to-orange-500/90 border-white/15 hover:shadow-red-500/35'}`}
@@ -6341,7 +6819,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
               </button>
               <button
                 type="button"
-                onClick={() => { if (mappackUnlocked) setIsDTCOpen(true); }}
+                onClick={openDtcCodes}
                 disabled={!mappackUnlocked}
                 title={t.sidebar.dtcCodes}
                 className={`relative overflow-hidden rounded-lg backdrop-blur-md border w-9 h-9 flex items-center justify-center transition-all duration-300 ${!mappackUnlocked ? 'opacity-40 cursor-not-allowed' : 'hover:scale-105 hover:shadow-xl'} ${theme === 'light' ? 'bg-gradient-to-l from-amber-500 via-yellow-500 to-amber-400 border-black/10 hover:shadow-amber-600/35' : 'bg-gradient-to-l from-amber-500/90 via-yellow-500/90 to-amber-400/90 border-white/15 hover:shadow-amber-500/35'}`}
@@ -6615,10 +7093,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
                 solution (EDC16…), la fenêtre affiche « aucune solution
                 disponible » plutôt que de masquer le bouton */}
             <button
-              onClick={() => {
-                if (!mappackUnlocked) return;
-                setIsSolutionsOpen(true);
-              }}
+              onClick={openSolutions}
               disabled={!mappackUnlocked}
               className={`relative overflow-hidden rounded-xl backdrop-blur-md border px-4 py-2 flex items-center justify-center gap-2.5 transition-all duration-500 group ${
                 !mappackUnlocked
@@ -6638,10 +7113,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
 
             {/* Bouton DTC codes - Dégradé ambre */}
             <button
-              onClick={() => {
-                if (!mappackUnlocked) return;
-                setIsDTCOpen(true);
-              }}
+              onClick={openDtcCodes}
               disabled={!mappackUnlocked}
               className={`relative overflow-hidden rounded-xl backdrop-blur-md border px-4 py-2 flex items-center justify-center gap-2.5 transition-all duration-500 group ${
                 !mappackUnlocked
@@ -6696,6 +7168,32 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
         {/* Maps Tree - SCROLLABLE */}
         <div className={`flex-1 min-h-0 overflow-y-auto p-2 maps-sidebar-scroll ${theme === 'light' ? 'light-theme' : ''}`}>
           <div className="space-y-1">
+            {/* Recherche de maps : filtre les deux mappacks (nom ou adresse) */}
+            <div className="relative mb-1">
+              <Search className="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: theme === 'light' ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }} />
+              <input
+                type="text"
+                value={mapSearch}
+                onChange={(e) => setMapSearch(e.target.value)}
+                placeholder={t.sidebar.searchMaps}
+                spellCheck={false}
+                className={`w-full pl-7 pr-7 py-1.5 text-xs rounded-md border focus:outline-none focus:ring-0 ${
+                  theme === 'light'
+                    ? 'bg-black/[0.04] border-black/10 text-slate-900 placeholder:text-slate-400'
+                    : 'bg-white/[0.04] border-white/10 text-white placeholder:text-slate-500'
+                }`}
+              />
+              {mapSearch && (
+                <button
+                  onClick={() => setMapSearch("")}
+                  title={t.common.close}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-white/10"
+                >
+                  <X className="w-3 h-3" style={{ color: theme === 'light' ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)' }} />
+                </button>
+              )}
+            </div>
+
             {/* Hexdump — rouvre la fenêtre hexdump quand elle a été fermée */}
             <div>
               <button
@@ -6720,250 +7218,61 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
               </button>
             </div>
 
-            {/* User maps Folder - ne change jamais de couleur */}
-            <div>
-              <div className="flex items-center gap-1">
+            {/* Mappack du détecteur ZedSuite. Une racine vide n'est jamais
+                affichée : un projet dont le calculateur n'est pas reconnu, ou
+                qui attend encore ses définitions de maps, ne montre que le
+                Hexdump et le bouton d'import. */}
+            {sortedFolders.length > 0 &&
+              renderMappackRoot("all", t.sidebar.mappack, sortedFolders, sortedGroupedMaps, true)}
+
+            {/* Un mappack par fichier de définitions importé (.ols, .xdf, .json) */}
+            {externalMappacks.map((pack) =>
+              renderMappackRoot(
+                `external:${pack.source}`,
+                pack.label,
+                pack.folders,
+                pack.grouped,
+                false,
+              ),
+            )}
+
+            {/* Import de définitions de maps : la seule façon de voir des maps
+                sur un binaire que le détecteur ne reconnaît pas encore. */}
+            {canImportDefinitions && (
+              <div className="pt-1">
+                {/* Pas d'attribut accept : la boîte de dialogue Windows
+                    s'ouvre sur « Tous les fichiers » au lieu d'un filtre
+                    personnalisé, comme la fenêtre d'upload. Le format est de
+                    toute façon reconnu au contenu, pas à l'extension. */}
+                <input
+                  ref={definitionsInputRef}
+                  type="file"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (file) void importDefinitionsFile(file);
+                  }}
+                />
                 <button
-                  onClick={() => toggleFolder("all")}
-                  className={`flex items-center gap-2 flex-1 min-w-0 px-2 py-1.5 rounded ${theme === 'light' ? 'hover:bg-black/5' : 'hover:bg-white/5'} transition-colors group`}
+                  onClick={() => definitionsInputRef.current?.click()}
+                  disabled={isImportingDefinitions}
+                  title={t.sidebar.importDefinitionsHint}
+                  className={`flex items-center gap-2 w-full min-w-0 px-2 py-1.5 rounded transition-colors disabled:opacity-50 ${
+                    theme === 'light' ? 'hover:bg-black/5' : 'hover:bg-white/5'
+                  }`}
                 >
-                  <ChevronRight className={`w-4 h-4 transition-transform duration-200 ${expandedFolders.has("all") ? "rotate-90" : ""}`} style={{ color: getTextColor() }} />
-                  {expandedFolders.has("all") ? (
-                    <FolderOpen className={`w-4 h-4 transition-colors ${theme === 'light' ? 'text-amber-600' : 'text-yellow-500'}`} />
-                  ) : (
-                    <Folder className={`w-4 h-4 transition-colors ${theme === 'light' ? 'text-amber-600' : 'text-yellow-500'}`} />
-                  )}
-                  <span className="text-sm" style={{ color: theme === 'light' ? '#000000' : 'rgba(255, 255, 255, 0.7)' }}>{t.sidebar.mappack}</span>
+                  <span className="w-4 h-4 flex-shrink-0" />
+                  <FileUp className="w-4 h-4 flex-shrink-0 text-sky-500" />
+                  <span
+                    className="text-sm truncate"
+                    style={{ color: theme === 'light' ? '#000000' : 'rgba(255, 255, 255, 0.7)' }}
+                  >
+                    {t.sidebar.importDefinitions}
+                  </span>
                 </button>
-                {/* État du mappack : % de règles de complétude satisfaites
-                    (EDC16). Vert = tout est là, orange = maps manquantes.
-                    Clic → fenêtre d'explication détaillée. */}
-                {mappackConfidence !== null && (
-                  <button
-                    onClick={() => setShowMappackHealth(true)}
-                    title={t.mappackHealth.title}
-                    className={`flex-shrink-0 px-1.5 h-5 flex items-center rounded-full text-[10px] font-semibold tabular-nums transition-colors ${
-                      missingExpected.length === 0
-                        ? (theme === 'light' ? 'bg-emerald-500/20 text-emerald-700 hover:bg-emerald-500/35' : 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/30')
-                        : (theme === 'light' ? 'bg-orange-500/20 text-orange-700 hover:bg-orange-500/35' : 'bg-orange-500/15 text-orange-400 hover:bg-orange-500/30')
-                    }`}
-                  >
-                    {mappackConfidence}%
-                  </button>
-                )}
-                {/* Cycle du tri des maps dans les dossiers : adresse → nom A→Z
-                    → nom Z→A. L'icône montre le mode ACTIF ; le title annonce
-                    le mode suivant. */}
-                {mappackUnlocked && (
-                  <button
-                    onClick={toggleMapSortMode}
-                    title={
-                      mapSortMode === "address"
-                        ? t.sidebar.sortByName
-                        : mapSortMode === "name"
-                          ? t.sidebar.sortByNameDesc
-                          : t.sidebar.sortByAddress
-                    }
-                    className={`flex-shrink-0 h-6 w-6 flex items-center justify-center rounded-md transition-colors ${
-                      theme === 'light' ? 'hover:bg-black/10' : 'hover:bg-white/10'
-                    }`}
-                    style={{ color: theme === 'light' ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.55)' }}
-                  >
-                    {mapSortMode === "address" ? (
-                      <ArrowDown01 className="w-4 h-4" />
-                    ) : mapSortMode === "name" ? (
-                      <ArrowDownAZ className="w-4 h-4" />
-                    ) : (
-                      <ArrowDownZA className="w-4 h-4" />
-                    )}
-                  </button>
-                )}
-                {/* Export mappack (WinOLS JSON) - contextual to the Mappack tree.
-                    Collapsed to the icon; the label slides out on hover, and
-                    for 2s when the mappack gets unlocked (discovery hint). */}
-                {mappackUnlocked && (
-                  <button
-                    onClick={handleExportMappack}
-                    title={t.toolbar.exportMappack}
-                    className={`group flex-shrink-0 flex items-center px-2 py-0.5 mr-1 rounded-md bg-gradient-to-r from-red-600 via-red-500 to-orange-500 text-xs font-medium ${theme === 'light' ? 'text-black' : 'text-white'}`}
-                  >
-                    <FileJson className={`w-3.5 h-3.5 flex-shrink-0 ${theme === 'light' ? 'text-black' : 'text-white'}`} />
-                    <span
-                      className={`overflow-hidden whitespace-nowrap transition-all duration-300 group-hover:max-w-[80px] group-hover:opacity-100 group-hover:ml-1.5 ${
-                        mappackExportHint ? 'max-w-[80px] opacity-100 ml-1.5' : 'max-w-0 opacity-0 ml-0'
-                      }`}
-                    >
-                      {t.sidebar.exportMappackShort}
-                    </span>
-                  </button>
-                )}
               </div>
-
-              {/* Unlock Mappack Button - shown when locked */}
-              {!mappackUnlocked && expandedFolders.has("all") && (
-                <div className="ml-6 mt-2 mb-2">
-                  <button
-                    onClick={handleUnlockMappack}
-                    disabled={mappackUnlocking}
-                    className={`w-full relative overflow-hidden rounded-xl backdrop-blur-md border px-4 py-2.5 flex items-center justify-center gap-2.5 transition-all duration-500 ${
-                      mappackUnlocking ? 'opacity-60 cursor-wait' : 'hover:scale-[1.02] hover:shadow-xl'
-                    } ${
-                      theme === 'light'
-                        ? 'bg-gradient-to-r from-red-600/90 via-red-500/90 to-orange-500/90 border-red-500/50 hover:shadow-red-500/30'
-                        : 'bg-gradient-to-r from-red-600/90 via-red-500/90 to-orange-500/90 border-white/10 hover:shadow-red-500/30'
-                    }`}
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: theme === 'light' ? '#000' : '#fff' }}>
-                        <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
-                        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                      </svg>
-                    <span className="font-medium text-sm" style={{ color: theme === 'light' ? '#000' : '#fff' }}>
-                      {mappackUnlocking ? (t.mappack?.unlocking || "Unlocking...") : (t.mappack?.unlock || "Unlock Mappack")}
-                    </span>
-                  </button>
-                </div>
-              )}
-
-              <div className={`overflow-hidden transition-all duration-300 ease-in-out ${
-                expandedFolders.has("all") ? "max-h-[20000px] opacity-100" : "max-h-0 opacity-0"
-              }`}>
-                <div className={`ml-1 mt-1 space-y-1 ${mappackJustUnlocked ? 'mappack-unlock-anim' : ''}`}>
-                  {sortedFolders.map((folder) => {
-                    const maps = sortedGroupedMaps[folder] || [];
-                    // Vérifier si au moins une map dans ce dossier a été modifiée
-                    // (cells modifications OR axis-label edits)
-                    // Nombre de cartes modifiées du dossier : affiché « X / Y »
-                    // dans le compteur (X en dégradé rouge), Y seul si aucune
-                    const folderModifiedCount = mappackUnlocked
-                      ? maps.filter(
-                          map => allMapModifications.has(map.address) || mapAxisLabels.has(map.address)
-                        ).length
-                      : 0;
-                    const folderHasModifiedMap = folderModifiedCount > 0;
-                    const folderTextColor = !mappackUnlocked
-                      ? (theme === 'light' ? 'rgba(0, 0, 0, 0.4)' : 'rgba(255, 255, 255, 0.4)')
-                      : (theme === 'light' ? '#000000' : 'rgba(255, 255, 255, 0.7)');
-                    // Le compteur garde toujours sa couleur normale
-                    const folderCountColor = theme === 'light' ? 'rgba(0, 0, 0, 0.4)' : 'rgba(255, 255, 255, 0.4)';
-                    return (
-                      <div key={folder}>
-                        <button
-                          onClick={() => toggleFolder(folder)}
-                          className={`flex items-center gap-2 w-full px-2 py-1.5 rounded transition-colors group ${
-                            !mappackUnlocked
-                              ? 'cursor-not-allowed opacity-60'
-                              : (theme === 'light' ? 'hover:bg-black/5' : 'hover:bg-white/5')
-                          }`}
-                        >
-                          {mappackUnlocked ? (
-                            <ChevronRight className={`w-3 h-3 transition-transform duration-200 ${expandedFolders.has(folder) ? "rotate-90" : ""}`} style={{ color: getTextColor() }} />
-                          ) : (
-                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: theme === 'light' ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)' }}>
-                              <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
-                              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                            </svg>
-                          )}
-                          {expandedFolders.has(folder) ? (
-                            <FolderOpen className={`w-3 h-3 transition-colors ${theme === 'light' ? 'text-amber-600' : 'text-yellow-500'}`} />
-                          ) : (
-                            <Folder className={`w-3 h-3 transition-colors ${theme === 'light' ? 'text-amber-600' : 'text-yellow-500'}`} />
-                          )}
-                          <span
-                            className={`text-xs ${folderHasModifiedMap ? (theme === 'light' ? MODIFIED_TEXT_GRADIENT_LIGHT : MODIFIED_TEXT_GRADIENT_DARK) : ''}`}
-                            style={folderHasModifiedMap ? undefined : { color: folderTextColor }}
-                          >{folder}</span>
-                          <span
-                            className="text-[10px] ml-auto px-1.5 rounded-full border tabular-nums text-center"
-                            style={{
-                              color: folderCountColor,
-                              backgroundColor: theme === 'light' ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.045)',
-                              borderColor: getBorderColor(),
-                              minWidth: '26px'
-                            }}
-                          >
-                            {folderHasModifiedMap && (
-                              <>
-                                <span className={`${theme === 'light' ? MODIFIED_TEXT_GRADIENT_LIGHT : MODIFIED_TEXT_GRADIENT_DARK} font-semibold`}>
-                                  {folderModifiedCount}
-                                </span>
-                                <span className="mx-0.5 opacity-60">/</span>
-                              </>
-                            )}
-                            {maps.length}
-                          </span>
-                        </button>
-
-                        <div className={`overflow-hidden transition-all duration-300 ease-in-out ${
-                          expandedFolders.has(folder) ? "max-h-[20000px] opacity-100" : "max-h-0 opacity-0"
-                        }`}>
-                          <div className="ml-1 mt-1 space-y-0.5">
-                            {maps.map((map, index) => {
-                              const isOpen = openMaps.some((openMap) => openMap.address === map.address);
-                              const isModified = allMapModifications.has(map.address) || mapAxisLabels.has(map.address);
-                              // Use codeblock_id directly from backend
-                              const edcsuiteCodeblockId = map.codeblock_id || null;
-
-                              // Texte : dégradé du logo si modifié (bg-clip-text), sinon normal.
-                              // L'icône (SVG currentColor) ne peut pas prendre le dégradé -> rouge uni.
-                              const modifiedGradient = theme === 'light' ? MODIFIED_TEXT_GRADIENT_LIGHT : MODIFIED_TEXT_GRADIENT_DARK;
-                              const textColor = isModified
-                                ? '#ef4444' // icône + fallback sans adresse
-                                : (theme === 'light' ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.7)');
-                              const textColorStrong = theme === 'light' ? 'rgba(0, 0, 0, 0.9)' : 'rgba(255, 255, 255, 0.9)';
-                              const textColorMuted = theme === 'light' ? 'rgba(0, 0, 0, 0.5)' : 'rgba(255, 255, 255, 0.5)';
-
-                              return (
-                                <button
-                                  key={index}
-                                  onClick={() => handleMapClick(map)}
-                                  onContextMenu={(e) => {
-                                    e.preventDefault();
-                                    setMapTreeContextMenu({ x: e.clientX, y: e.clientY, map });
-                                  }}
-                                  className={`flex items-center gap-2 w-full px-2 py-1.5 rounded text-left transition-colors focus:outline-none ${
-                                    isOpen
-                                      // Clair + modifiée : fond rouge plus léger sous le texte rouge
-                                      ? (theme === 'light' && isModified ? "bg-primary/10" : "bg-primary/20")
-                                      : (theme === 'light' ? 'hover:bg-black/5' : 'hover:bg-white/5')
-                                  }`}
-                                  style={{ color: textColor }}
-                                >
-                                  <FileText className="w-3 h-3 flex-shrink-0" />
-                                  <span className="text-xs truncate flex-1">
-                                    {map.address ? (
-                                      <>
-                                        <span className={`font-mono ${isModified ? modifiedGradient : ''}`} style={isModified ? undefined : { color: getTextColor() }}>{map.address.toString(16).toUpperCase()}</span>
-                                        <span className={`mx-1 ${isModified ? modifiedGradient : ''}`} style={isModified ? undefined : { color: textColor }}>-</span>
-                                        <span className={isModified ? modifiedGradient : ''} style={isModified ? undefined : { color: textColorStrong }}>{map.name || `Map ${index + 1}`}</span>
-                                        {edcsuiteCodeblockId !== null && (
-                                          <span className={`ml-1 ${isModified ? modifiedGradient : ''}`} style={isModified ? undefined : { color: textColorMuted }}>[codeblock {edcsuiteCodeblockId}]</span>
-                                        )}
-                                      </>
-                                    ) : (
-                                      map.name || `Map ${index + 1}`
-                                    )}
-                                  </span>
-                                  {/* Map dimensions - aligned right like folder count */}
-                                  {map.dimensions && (
-                                    <span className="text-xs font-mono flex-shrink-0" style={{ color: theme === 'light' ? 'rgba(0, 0, 0, 0.4)' : 'rgba(255, 255, 255, 0.4)' }}>
-                                      {map.dimensions.TwoDimensional
-                                        ? `${map.dimensions.TwoDimensional.cols}x${map.dimensions.TwoDimensional.rows}`
-                                        : map.dimensions.OneDimensional
-                                          ? `${map.dimensions.OneDimensional.length}x1`
-                                          : ''}
-                                    </span>
-                                  )}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
+            )}
           </div>
         </div>
 

@@ -4,15 +4,17 @@
 
 ![Platform](https://img.shields.io/badge/plateforme-Windows%20%7C%20macOS%20%7C%20Linux-0078d4) ![Engine](https://img.shields.io/badge/moteur%20de%20d%C3%A9tection-Rust-e6522c) ![License](https://img.shields.io/badge/licence-GPL--3.0-2ea44f) ![Downloads](https://img.shields.io/github/downloads/LeZed97/ZedSuite/total)
 
-**Éditeur de cartographies open source pour les ECU Bosch EDC15/EDC16 du groupe VAG — 100 % en local, sur Windows, macOS et Linux.**
+**Éditeur de cartographies open source — 100 % en local, sur Windows, macOS et Linux.**
 
-Ouvrez un dump d'ECU et ZedSuite trouve les cartographies tout seul : Driver Wish, Turbo Boost, N75, SOI, limiteurs de couple, etc. Modifiez-les en tableau, en 2D, en 3D ou directement dans l'hexadécimal. Créez des versions, comparez-les, désactivez ou réactivez des DTC, corrigez le checksum, puis exportez votre binaire ou un mappack WinOLS.
+Ouvrez un dump Bosch EDC15/EDC16 du groupe VAG et ZedSuite trouve les cartographies tout seul : Driver Wish, Turbo Boost, N75, SOI, limiteurs de couple, etc. Modifiez-les en tableau, en 2D, en 3D ou directement dans l'hexadécimal. Créez des versions, comparez-les, désactivez ou réactivez des DTC, corrigez le checksum, puis exportez votre binaire ou un mappack WinOLS.
+
+Les autres calculateurs s'ouvrent aussi, avec les définitions de maps que vous apportez : un projet WinOLS `.ols`, un `.xdf` TunerPro ou un mappack JSON. L'éditeur, l'hexadécimal et les versions fonctionnent pareil sur ces fichiers — voir [Apporter vos propres définitions de maps](#-apporter-vos-propres-définitions-de-maps-bêta), qui est en **bêta**.
 
 Pas de compte, pas de cloud, pas de limites : tout est en local, vos fichiers ne quittent jamais votre ordinateur.
 
 ![Éditeur ZedSuite](docs/screenshot.png)
 
-## 🚗 Calculateurs supportés
+## 🚗 Calculateurs détectés automatiquement
 
 | ECU | Détection |
 |-----|-----------|
@@ -22,13 +24,29 @@ Pas de compte, pas de cloud, pas de limites : tout est en local, vos fichiers ne
 | Bosch EDC16U31 | signatures |
 | Bosch EDC16U34 | signatures |
 
+**Tous les autres calculateurs s'ouvrent aussi.** Ce qui est limité à la liste ci-dessus, c'est la détection, pas l'application : n'importe quel binaire s'ouvre, et c'est vous qui lui donnez la liste des maps, avec un projet WinOLS `.ols`, un `.xdf` TunerPro ou un mappack JSON. Voir [Apporter vos propres définitions de maps](#-apporter-vos-propres-définitions-de-maps-bêta).
+
 L'identification est volontairement stricte : un fichier n'est ouvert comme l'un de ces calculateurs que si on y trouve des preuves concrètes (numéros hardware Bosch, chaînes propres à la famille, signatures structurelles). Un dump de 2 Mo venant d'un autre calculateur (EDC17, Marelli, Siemens…) est refusé plutôt que d'être pris à tort pour un EDC16.
 
 La détection n'est pas parfaite pour autant. Chaque famille a été calibrée sur un banc constitué de tous les fichiers que j'avais à disposition, mais je n'avais pas autant de dumps différents en EDC16U31 que pour les autres familles : sur certains fichiers U31, une partie des maps peut ne pas être détectée. Même chose côté EDC15VM : certaines maps peuvent ne pas apparaître, notamment sur les dumps de 1 Mo des moteurs V6, que je n'ai volontairement pas terminés car ça m'aurait pris encore trop de temps. Dans tous les cas, lorsque les maps sont complètement détectées sur EDC15/16, les mappacks sont d'une qualité imbattable par rapport à ce qui se fait sur le marché.
 
+## 📥 Apporter vos propres définitions de maps (bêta)
+
+Un fichier que ZedSuite ne détecte pas n'est plus un cul-de-sac. Le projet se crée quand même, sur n'importe quel binaire, et c'est vous qui lui donnez la liste des maps :
+
+- un **projet WinOLS `.ols`** — ses versions de ROM enregistrées deviennent des versions du projet, et les maps définies par son auteur apparaissent dans leur propre mappack ;
+- un **`.xdf` TunerPro** ou un **mappack JSON**, importé depuis la liste des maps une fois le projet ouvert.
+
+Les maps sont enregistrées avec le projet et s'ouvrent comme les autres : tableau, 2D, 3D, hexadécimal, versions, comparaison, export de mappack. Chaque fichier de définitions a sa propre racine dans la liste, à côté de celle du détecteur : un calculateur reconnu peut donc afficher les deux en même temps.
+
+Ce qui repose sur le détecteur n'est pas disponible sur ces fichiers : les solutions, les codes défaut, l'estimation de puissance, le checksum et le badge de complétude travaillent tous à partir de maps que ZedSuite nomme lui-même. L'app le dit, plutôt que d'ouvrir une fenêtre vide.
+
+> ⚠️ **C'est une bêta.** Le lecteur `.ols` a été établi sur des projets WinOLS 5 ; les dispositions plus anciennes ne sont pas lues. Des fichiers de définitions que ce lecteur ne comprend pas encore, des axes et des conversions qu'il lit autrement, et des bugs tout court : il faut s'y attendre, et il reste beaucoup de travail avant de couvrir tous les cas. Signalez ce que vous rencontrez, avec le fichier si possible : c'est ce qui permet de corriger.
+
 ## ⚙️ Fonctionnalités
 
-- **Détection automatique des cartographies** — moteur Rust embarqué, un détecteur par famille
+- **Détection automatique des cartographies** — moteur Rust embarqué, un détecteur par famille (Bosch EDC15/EDC16 VAG)
+- **Apportez vos définitions de maps (bêta)** — ouvrez n'importe quel binaire et importez un projet WinOLS `.ols`, un `.xdf` TunerPro ou un mappack JSON ; les maps sont enregistrées avec le projet et se modifient comme les maps détectées
 - **Vérification de complétude** — un badge de confiance indique si toutes les maps attendues pour la famille d'ECU ont été trouvées, avec le détail de ce qui manque en un clic
 - **Éditeur de maps** — tableau, graphe 2D et surface 3D, navigation clavier et copier/coller entre maps, modification absolue, additive ou en pourcentage, report vers les maps similaires, raccourcis façon WinOLS. Le graphe 2D est fait pour les maps à une ligne (courbes, linéarisations, valeurs uniques) ; les matrices complètes s'ouvrent en 3D, où un pic ou un plat se voit d'un coup d'œil, et dans le tableau pour les valeurs exactes
 - **Éditeur hexadécimal** — virtualisé, minimap, modifications surlignées par rapport à l'origine
@@ -78,7 +96,9 @@ La pile web apporte plus que la portabilité. Aucun navigateur n'est embarqué :
 
 ZedSuite reste dans l'esprit d'EDCSuite : un outil que tout le monde peut avoir pour apprendre le métier. On ouvre un fichier, on voit les maps, on comprend ce qui fait quoi et on modifie soi-même. C'est aussi pour ça qu'il n'y a pas de solutions automatiques (EGR off, FAP off, stage en un clic) et qu'il n'y en aura pas : le but est de comprendre le fichier, pas d'appuyer sur un bouton.
 
-**Pas de nouveau calculateur de ma part.** Chaque détecteur de l'app a demandé des mois de rétro-ingénierie sur des centaines de fichiers d'origine et modifiés, vérifiés contre des packs WinOLS et des damos, et c'est ce travail de banc qui rend la liste des maps fiable. Le refaire pour une autre famille, c'est deux à trois mois minimum et un gros corpus de fichiers d'origine et de mappacks pour ce calculateur. Je maintiens ZedSuite sur mon temps libre, et un travail de cette taille n'est pas quelque chose que je pourrais offrir gratuitement. La liste supportée reste la gamme VAG EDC15/EDC16, terminée proprement. Une nouvelle famille peut toujours arriver par une contribution qui respecte le niveau exigé ci-dessous.
+**Pas de nouveau calculateur de ma part.** Chaque détecteur de l'app a demandé des mois de rétro-ingénierie sur des centaines de fichiers d'origine et modifiés, vérifiés contre des packs WinOLS et des damos, et c'est ce travail de banc qui rend la liste des maps fiable. Le refaire pour une autre famille, c'est deux à trois mois minimum et un gros corpus de fichiers d'origine et de mappacks pour ce calculateur. Je maintiens ZedSuite sur mon temps libre, et un travail de cette taille n'est pas quelque chose que je pourrais offrir gratuitement. La liste **détectée automatiquement** reste la gamme VAG EDC15/EDC16, terminée proprement. Une nouvelle famille peut toujours arriver par une contribution qui respecte le niveau exigé ci-dessous.
+
+Ça ne vous ferme pas les autres calculateurs : apportez vous-même les définitions de maps et l'éditeur fonctionne sur n'importe quel fichier, comme décrit plus haut. Ce qu'il ne fera pas, c'est inventer une liste de maps dont il ne peut pas répondre.
 
 ## 🤝 Contribuer
 
@@ -111,7 +131,7 @@ curl -fsSL https://raw.githubusercontent.com/LeZed97/ZedSuite/master/install-mac
 
 ## 🗺️ Feuille de route
 
-Ce qui est en cours, ce qui est prévu et ce que les utilisateurs ont demandé : [ROADMAP.fr.md](ROADMAP.fr.md) (aussi en [anglais](ROADMAP.md), [espagnol](ROADMAP.es.md), [italien](ROADMAP.it.md), [allemand](ROADMAP.de.md), [portugais](ROADMAP.pt.md) et [roumain](ROADMAP.ro.md)). La même page s'ouvre dans l'application, dans la langue de l'app, depuis le dashboard (bouton feuille de route, à côté de l'aide). La compatibilité XDF (fichiers de définition TunerPro) y figure, prévue pour plus tard, quand j'aurai le temps de m'y pencher.
+Ce qui est en cours, ce qui est prévu et ce que les utilisateurs ont demandé : [ROADMAP.fr.md](ROADMAP.fr.md) (aussi en [anglais](ROADMAP.md), [espagnol](ROADMAP.es.md), [italien](ROADMAP.it.md), [allemand](ROADMAP.de.md), [portugais](ROADMAP.pt.md) et [roumain](ROADMAP.ro.md)). La même page s'ouvre dans l'application, dans la langue de l'app, depuis le dashboard (bouton feuille de route, à côté de l'aide). La lecture des numéros hardware et software des fichiers que l'app ne détecte pas, et l'écriture d'une liste de maps au format `.xdf`, y figurent.
 
 ## 📫 Contact
 

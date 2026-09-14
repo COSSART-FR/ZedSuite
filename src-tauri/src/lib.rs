@@ -4,8 +4,12 @@
 
 pub mod commands;
 pub mod detector;
+pub mod mappack_import;
 pub mod models;
+pub mod ols_import;
+pub mod ols_maps;
 pub mod update;
+pub mod xdf_import;
 
 
 /// Vrai quand le DMI annonce un hyperviseur courant (VMware, VirtualBox,
@@ -79,6 +83,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::identify_ecu,
+            commands::inspect_ols_container,
+            commands::extract_ols_version,
+            commands::extract_ols_maps,
+            commands::import_map_definitions,
             commands::detect_maps,
             commands::detector_version,
             commands::list_ecus,

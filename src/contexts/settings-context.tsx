@@ -57,7 +57,7 @@ export interface PlatformSettings {
 }
 
 const defaultPlatformSettings: PlatformSettings = {
-  maxFileSizeMB: 10,
+  maxFileSizeMB: 42,
   defaultCredits: 3,
   siteName: "ZedSuite",
 };
@@ -159,7 +159,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         if (res.ok) {
           const data = await res.json();
           setPlatform({
-            maxFileSizeMB: data.maxFileSizeMB ?? 10,
+            maxFileSizeMB: data.maxFileSizeMB ?? 42,
             defaultCredits: data.defaultCredits ?? 3,
             siteName: data.siteName ?? "ZedSuite",
           });

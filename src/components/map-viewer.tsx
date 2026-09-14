@@ -408,6 +408,13 @@ interface MapViewerProps {
     data_type?: string; // "UInt8", "UInt16", "UInt32", "Int8", "Int16", "Int32", "Float32"
     // Lignes fichier dans l'ordre inverse de l'axe Y (bloc Duration de certains EDC16)
     rows_reversed?: boolean;
+    /** « OLS », « XDF » ou « JSON » : map venue d'un fichier de définitions
+     *  importé. Sa disposition est celle que le fichier déclare. */
+    external_source?: string | null;
+    /** Points d'axe écrits dans le fichier de définitions au lieu d'être lus
+     *  dans le binaire (axe fixe d'un XDF TunerPro). */
+    x_axis_values?: number[] | null;
+    y_axis_values?: number[] | null;
   };
   fileData: number[];
   projectName?: string;
@@ -2466,6 +2473,15 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
     // - Y axis (rows) needs apiCols values ÔåÆ read from yAxisAddr (which has apiCols values) Ô£ô
     // But wait: we read cols values from xAxisAddr and rows values from yAxisAddr
     // After swap: cols = apiRows, rows = apiCols, so this is correct!
+    // Axe écrit en clair dans le fichier de définitions importé (balises
+    // LABEL d'un XDF) : il n'a pas d'adresse dans le binaire, ses points
+    // sont dans la définition. Sans lui, l'axe serait numéroté 1..N.
+    const fixedAxisLabels = (values: number[] | null | undefined, count: number): string[] | null => {
+      if (!Array.isArray(values) || values.length !== count || count === 0) return null;
+      const step = values.length > 1 ? Math.abs(values[1] - values[0]) : Math.abs(values[0]);
+      const decimals = step === 0 ? 0 : step < 0.1 ? 4 : step < 1 ? 2 : 0;
+      return values.map((v) => v.toFixed(decimals));
+    };
     let xAxisIsIndex = false;
     let yAxisIsIndex = false;
     if (xAxisAddr > 0) {
@@ -2534,13 +2550,18 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
         xLabels.push(...tempXLabels);
       }
     } else {
-      // Sans axe dans le fichier (sélecteurs, courbes 1×N…) : simple index
-      // 1..N — l'ancien « 0, 5, 10… » ressemblait à de vraies valeurs et
-      // rendait les sélecteurs SOI illisibles.
-      for (let i = 0; i < cols; i++) {
-        xLabels.push(String(i + 1));
+      const fixedX = fixedAxisLabels(mapData.x_axis_values, cols);
+      if (fixedX) {
+        xLabels.push(...fixedX);
+      } else {
+        // Sans axe dans le fichier (sélecteurs, courbes 1×N…) : simple index
+        // 1..N — l'ancien « 0, 5, 10… » ressemblait à de vraies valeurs et
+        // rendait les sélecteurs SOI illisibles.
+        for (let i = 0; i < cols; i++) {
+          xLabels.push(String(i + 1));
+        }
+        xAxisIsIndex = true;
       }
-      xAxisIsIndex = true;
     }
     
     // CRITICAL FIX: Read Y axis from file for Y display (vertical/rows)
@@ -2658,11 +2679,16 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
         yLabels.push(...tempYLabels);
       }
     } else {
-      // Sans axe dans le fichier : simple index 1..N (voir l'axe X)
-      for (let i = 0; i < rows; i++) {
-        yLabels.push(String(i + 1));
+      const fixedY = fixedAxisLabels(mapData.y_axis_values, rows);
+      if (fixedY) {
+        yLabels.push(...fixedY);
+      } else {
+        // Sans axe dans le fichier : simple index 1..N (voir l'axe X)
+        for (let i = 0; i < rows; i++) {
+          yLabels.push(String(i + 1));
+        }
+        yAxisIsIndex = true;
       }
-      yAxisIsIndex = true;
     }
     
     // CRITICAL: Read map data in row-major order

@@ -46,6 +46,20 @@ pub struct DetectedMap {
     // lignes à l'envers pour rester alignés sur l'axe.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rows_reversed: Option<bool>,
+    /// Valeurs d'axe écrites dans le fichier de définitions lui-même au lieu
+    /// d'être lues dans le binaire (axe fixe d'un XDF TunerPro : ses balises
+    /// `LABEL`). L'éditeur les affiche telles quelles ; sans elles il
+    /// numéroterait les colonnes 1..N.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub x_axis_values: Option<Vec<f64>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub y_axis_values: Option<Vec<f64>>,
+    /// Map qui ne vient pas du détecteur mais d'un fichier de définitions
+    /// fourni par l'utilisateur : « OLS » (projet WinOLS), « XDF » (TunerPro)
+    /// ou « JSON » (mappack). Elle vit dans son propre mappack, à côté de
+    /// celui de l'app, et n'entre pas dans le rapport de complétude.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_source: Option<String>,
 }
 
 /// Information about a MapSelector attached to a map
@@ -206,6 +220,9 @@ impl DetectedMap {
             subcategory: None,
             map_selector: None,
             rows_reversed: None,
+            x_axis_values: None,
+            y_axis_values: None,
+            external_source: None,
         }
     }
 }

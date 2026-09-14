@@ -4,15 +4,17 @@
 
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0078d4) ![Engine](https://img.shields.io/badge/detection%20engine-Rust-e6522c) ![License](https://img.shields.io/badge/license-GPL--3.0-2ea44f) ![Downloads](https://img.shields.io/github/downloads/LeZed97/ZedSuite/total)
 
-**Open source map editor for VAG-group Bosch EDC15/EDC16 ECUs — 100% local, on Windows, macOS and Linux.**
+**Open source ECU map editor — 100% local, on Windows, macOS and Linux.**
 
-Drop in an ECU dump and ZedSuite finds the maps for you — Driver Wish, Turbo Boost, N75, SOI, torque limiters and the rest. Edit them in a table, on a 2D graph or a 3D surface, or straight in the hexdump. Keep versions, compare them, disable or re-enable DTCs, fix the checksum, export your binary or a WinOLS mappack.
+Drop in a VAG-group Bosch EDC15/EDC16 dump and ZedSuite finds the maps for you — Driver Wish, Turbo Boost, N75, SOI, torque limiters and the rest. Edit them in a table, on a 2D graph or a 3D surface, or straight in the hexdump. Keep versions, compare them, disable or re-enable DTCs, fix the checksum, export your binary or a WinOLS mappack.
+
+Any other ECU opens too, with the map definitions you bring: a WinOLS `.ols` project, a TunerPro `.xdf` or a JSON mappack. The editor, the hexdump and the versions work the same on those files — see [Bringing your own map definitions](#-bringing-your-own-map-definitions-beta), which is **beta**.
 
 No account, no cloud, no limits: everything runs locally and your files stay on your computer.
 
 ![ZedSuite editor](docs/screenshot.png)
 
-## 🚗 Supported ECUs
+## 🚗 ECUs detected automatically
 
 | ECU | Detection |
 |-----|-----------|
@@ -22,13 +24,29 @@ No account, no cloud, no limits: everything runs locally and your files stay on 
 | Bosch EDC16U31 | signature based |
 | Bosch EDC16U34 | signature based |
 
+**Every other ECU opens too.** Detection is what is limited to the list above, not the app: any binary can be opened, and you give it the map list yourself with a WinOLS `.ols` project, a TunerPro `.xdf` or a JSON mappack. See [Bringing your own map definitions](#-bringing-your-own-map-definitions-beta).
+
 Identification is strict by design: a file is only opened as one of these ECUs when it carries positive evidence (Bosch hardware numbers, family strings, structural signatures). A 2 MB dump from another ECU (EDC17, Marelli, Siemens, …) is rejected instead of being misread as an EDC16.
 
 Detection is not perfect either. Each family was calibrated on a bench made of every file I had available, but I did not have as many different EDC16U31 dumps as for the other families: on some U31 files, part of the maps may not be detected. Same thing on EDC15VM: some maps may not show up, especially on the 1 MB dumps of the V6 engines, which I deliberately left unfinished because it would have taken too much more time. In any case, when the maps are fully detected on EDC15/16, the mappacks are of unbeatable quality compared to what is available on the market.
 
+## 📥 Bringing your own map definitions (beta)
+
+A file ZedSuite does not detect is no longer a dead end. The project is created anyway, on any binary, and you give it the map list yourself:
+
+- a **WinOLS `.ols` project** — its saved ROM versions become versions of the project, and the maps its author defined appear in their own mappack;
+- a **TunerPro `.xdf`** or a **JSON mappack**, imported from the map list once the project is open.
+
+The maps are saved with the project and open like any other: table, 2D, 3D, hexdump, versions, compare, mappack export. Each definition file gets its own root in the map list, next to the one the detector builds, so a recognised ECU can show both at once.
+
+What still relies on the detector is not available on those files: the solutions, the fault codes, the power estimate, the checksum and the completeness badge all work from maps ZedSuite names itself. The app says so instead of opening an empty window.
+
+> ⚠️ **This is beta.** The `.ols` reader was established on WinOLS 5 projects; older WinOLS layouts are not read. Definition files this reader does not understand yet, axes and conversions it reads differently, and plain bugs are all to be expected, and there is a lot of work left before every case is covered. Report what you hit, with the file if you can: that is what gets it fixed.
+
 ## ⚙️ Features
 
-- **Automatic map detection** — embedded Rust engine, per-family detectors
+- **Automatic map detection** — embedded Rust engine, per-family detectors (VAG Bosch EDC15/EDC16)
+- **Bring your own map definitions (beta)** — open any binary and import a WinOLS `.ols` project, a TunerPro `.xdf` or a JSON mappack; the maps are saved with the project and edited like the detected ones
 - **Detection completeness check** — a confidence badge shows whether every map expected for the ECU family was found, with the missing ones detailed in one click
 - **Map editor** — table, 2D graph and 3D surface views, keyboard navigation and copy/paste between maps, absolute, additive or percent edits, propagation to similar maps, WinOLS-style shortcuts. The 2D graph is for single-line maps (curves, linearisations, single values); full matrices open in 3D, where a spike or a flat spot shows up at a glance, and in the table for exact values
 - **Hexdump editor** — virtualized, minimap, modification highlighting vs original
@@ -78,7 +96,9 @@ The web stack brings more than portability. No browser is bundled, so the Window
 
 ZedSuite stays in the spirit of EDCSuite: a tool everyone can have to learn the craft. You open a file, you see the maps, you understand what does what and you edit it yourself. That is also why there are no automatic solutions (EGR off, DPF off, one-click tunes) and why there will not be: the point is to understand the file, not to press a button.
 
-**No new ECU family from me.** Every detector in the app took months of reverse engineering on hundreds of original and tuned files, checked against WinOLS packs and damos references, and that bench work is what makes the map list trustworthy. Doing it again for another family means two to three months minimum and a large corpus of original files and mappacks for that ECU. I maintain ZedSuite on my free time, and work of that size is not something I could give away for free. The supported list stays the VAG EDC15/EDC16 range, finished properly. A new family can still come from a contribution that meets the bar below.
+**No new ECU family from me.** Every detector in the app took months of reverse engineering on hundreds of original and tuned files, checked against WinOLS packs and damos references, and that bench work is what makes the map list trustworthy. Doing it again for another family means two to three months minimum and a large corpus of original files and mappacks for that ECU. I maintain ZedSuite on my free time, and work of that size is not something I could give away for free. The **automatically detected** list stays the VAG EDC15/EDC16 range, finished properly. A new family can still come from a contribution that meets the bar below.
+
+That does not lock you out of the other ECUs: bring the map definitions yourself and the editor works on any file, as described above. What it will not do is invent a map list it cannot vouch for.
 
 ## 🤝 Contributing
 
@@ -111,7 +131,7 @@ curl -fsSL https://raw.githubusercontent.com/LeZed97/ZedSuite/master/install-mac
 
 ## 🗺️ Roadmap
 
-What is being worked on, what is planned and what users asked for: [ROADMAP.md](ROADMAP.md) (also in [French](ROADMAP.fr.md), [Spanish](ROADMAP.es.md), [Italian](ROADMAP.it.md), [German](ROADMAP.de.md), [Portuguese](ROADMAP.pt.md) and [Romanian](ROADMAP.ro.md)). The same page opens inside the app, in the app language, from the dashboard (roadmap button next to the help button). XDF compatibility (TunerPro definition files) is on it, planned for later, when I have the time to look into it.
+What is being worked on, what is planned and what users asked for: [ROADMAP.md](ROADMAP.md) (also in [French](ROADMAP.fr.md), [Spanish](ROADMAP.es.md), [Italian](ROADMAP.it.md), [German](ROADMAP.de.md), [Portuguese](ROADMAP.pt.md) and [Romanian](ROADMAP.ro.md)). The same page opens inside the app, in the app language, from the dashboard (roadmap button next to the help button). Reading the hardware and software numbers of files the app does not detect, and writing a map list back out as an `.xdf`, are on it.
 
 ## 📫 Contact
 

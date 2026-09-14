@@ -57,6 +57,9 @@ export interface ExportMapData {
   is_little_endian?: boolean;
   // EDC15 : numéro de codeblock, ajouté au nom exporté comme dans l'app
   codeblock_id?: number | null;
+  /** « OLS », « XDF » ou « JSON » : map venue d'un fichier de définitions
+   *  importé, exportée telle que ce fichier la décrit. */
+  external_source?: string | null;
 }
 
 type WinolsMap = Record<string, string>;
@@ -149,6 +152,7 @@ function exportLayout(m: ExportMapData): { rows: number; cols: number; xAxis: Ex
     data_type: m.data_type,
     rows_reversed: m.rows_reversed === true,
     dimensions: m.dimensions,
+    external_source: m.external_source,
   });
   const name = (m.name || "").toLowerCase();
   const rowMajorSwapped =
@@ -208,6 +212,7 @@ function buildWinolsMap(
   const shown = resolveAxisSources({
     name: m.name, description: m.description, size: m.size ?? 0, data_type: m.data_type,
     rows_reversed: m.rows_reversed === true, dimensions: m.dimensions,
+    external_source: m.external_source,
     x_axis_address: m.x_axis_address, y_axis_address: m.y_axis_address,
     x_axis_correction: m.x_axis_correction, y_axis_correction: m.y_axis_correction,
     x_axis_offset: m.x_axis_offset, y_axis_offset: m.y_axis_offset,

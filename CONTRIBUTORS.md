@@ -6,6 +6,7 @@ The historical thanks, to the people whose earlier work made this project possib
 
 ## Contributions
 
+- [@grantUser](https://github.com/grantUser) — reading WinOLS `.ols` project files: the container, its metadata and its saved ROM versions (1.2.3). That contribution is what opened the door to the whole "bring your own map definitions" mode.
 - [@COSSART-FR](https://github.com/COSSART-FR) — power estimate of a version created by importing a file (1.1.8). Also the Bosch EDC16CP31 Mercedes detector, in progress.
 - [@bferd](https://github.com/bferd) — the Linux version: the AppImage and .deb builds, and the update dialog that opens the release page on Linux (1.2.1).
 - [@Hitsauskone](https://github.com/Hitsauskone) — asked for the Linux version, built by @bferd (1.2.1).

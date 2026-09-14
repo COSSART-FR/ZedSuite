@@ -56,6 +56,125 @@ pub fn identify_ecu(
     })
 }
 
+/// Inspects a file to see if it is a `.ols` WinOLS project container (as opposed to a raw ECU
+/// dump). Returns `Ok(None)` -- not an error -- when it isn't one, so the frontend can fall back
+/// to the existing raw-dump flow unchanged.
+///
+/// A `.ols` file can hold several saved ROM versions (e.g. "Original" + "Stage 1"); the caller
+/// must pick one and pass its `index` to `extract_ols_version` before running
+/// `identify_ecu`/`detect_maps` on the result.
+#[tauri::command]
+pub fn inspect_ols_container(file_data_base64: String) -> Result<Option<crate::ols_import::OlsInspection>, String> {
+    let data = decode_base64(&file_data_base64)?;
+    let result = crate::ols_import::inspect(&data);
+    log::warn!(
+        "🧩 [INSPECT-OLS] {} bytes -> {}",
+        data.len(),
+        match &result {
+            Some(info) => format!("recognised, {} version(s)", info.versions.len()),
+            None => "not a .ols container".to_string(),
+        }
+    );
+    Ok(result)
+}
+
+/// Extracts one saved version's raw ROM bytes out of a `.ols` container (`version_index` from
+/// `inspect_ols_container`'s returned list), base64-encoded for the same IPC shape every other
+/// command here uses. The result is a plain raw dump: feed it to `identify_ecu`/`detect_maps`
+/// exactly as if it had been the original file.
+#[tauri::command]
+pub fn extract_ols_version(file_data_base64: String, version_index: u32) -> Result<String, String> {
+    let data = decode_base64(&file_data_base64)?;
+    let extracted = crate::ols_import::extract_version(&data, version_index)?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(extracted))
+}
+
+/// The map definitions of a `.ols` project, in the same shape as a detection
+/// result, so a WinOLS project of an ECU ZedSuite has no detector for still
+/// opens with the maps its author defined. Empty when the project carries
+/// none (or an older WinOLS layout, see `ols_maps`).
+#[tauri::command]
+pub fn extract_ols_maps(file_data_base64: String) -> Result<DetectMapsResponse, String> {
+    let start = Instant::now();
+    let data = decode_base64(&file_data_base64)?;
+    let inspection = crate::ols_import::inspect(&data).ok_or("not a .ols file")?;
+    let rom_len = inspection.versions.first().map(|v| v.size as u32).unwrap_or(0);
+    let ols_maps = crate::ols_maps::parse_maps(&data, rom_len);
+    let big_endian = inspection.byte_order.as_deref() == Some("hilo");
+    let maps = crate::ols_maps::to_detected_maps(&ols_maps, big_endian);
+    log::warn!("🧩 [OLS-MAPS] {} map(s) read from the WinOLS project (format {})", maps.len(), inspection.format_version);
+    Ok(DetectMapsResponse {
+        success: true,
+        total_maps: maps.len(),
+        maps,
+        processing_time_ms: start.elapsed().as_millis(),
+        file_size: rom_len as usize,
+        detector_version: DETECTOR_VERSION,
+        expected_maps: None,
+    })
+}
+
+/// Résultat de l'import d'un fichier de définitions de maps.
+#[derive(Debug, Serialize)]
+pub struct ImportDefinitionsResponse {
+    pub success: bool,
+    /// « XDF » (TunerPro) ou « JSON » (mappack), tel que reconnu.
+    pub format: String,
+    pub total_maps: usize,
+    pub maps: Vec<DetectedMap>,
+    /// Ordre des octets décrit par les définitions, « hilo » ou « lohi »,
+    /// à retenir sur le projet : le fichier est le seul à le dire quand le
+    /// calculateur n'est pas reconnu.
+    pub byte_order: Option<String>,
+    pub processing_time_ms: u128,
+}
+
+/// Reads a map definition file the user brings for a binary ZedSuite has no
+/// detector for: a TunerPro `.xdf` or a JSON mappack (the format the app
+/// itself exports). The format is recognised from the content, not from the
+/// extension. `rom_size` is the size of the binary the project holds; a
+/// definition pointing outside it is dropped.
+#[tauri::command]
+pub fn import_map_definitions(
+    file_data_base64: String,
+    file_name: String,
+    rom_size: u32,
+) -> Result<ImportDefinitionsResponse, String> {
+    let start = Instant::now();
+    let data = decode_base64(&file_data_base64)?;
+    if data.is_empty() {
+        return Err("empty file".to_string());
+    }
+
+    let (format, maps) = if crate::xdf_import::looks_like_xdf(&data) {
+        let text = String::from_utf8_lossy(&data);
+        ("XDF", crate::xdf_import::parse_xdf(&text, rom_size))
+    } else if crate::mappack_import::looks_like_json(&data) {
+        let text = String::from_utf8_lossy(&data);
+        ("JSON", crate::mappack_import::parse_mappack(&text, rom_size)?)
+    } else {
+        return Err("unsupported definition file".to_string());
+    };
+
+    let byte_order = crate::mappack_import::dominant_byte_order(&maps).map(|s| s.to_string());
+    log::warn!(
+        "📥 [IMPORT-DEFS] {} -> {} ({} map(s), {})",
+        file_name,
+        format,
+        maps.len(),
+        byte_order.as_deref().unwrap_or("byte order unknown")
+    );
+
+    Ok(ImportDefinitionsResponse {
+        success: true,
+        format: format.to_string(),
+        total_maps: maps.len(),
+        maps,
+        byte_order,
+        processing_time_ms: start.elapsed().as_millis(),
+    })
+}
+
 /// Version du moteur de détection.
 ///
 /// À INCRÉMENTER dès qu'une modification change les résultats produits :

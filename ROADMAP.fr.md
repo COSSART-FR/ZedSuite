@@ -14,7 +14,8 @@ Pour demander une fonction ou signaler un bug : ouvrez une issue sur [GitHub](ht
 - EDC15VM : vérifier sur véhicule que les maps SVRL sont réellement actives quand le détecteur les trouve.
 - EDC16U31 : meilleure détection, il manque encore quelques fichiers EDC16U31 au banc pour finir proprement (la famille 12x12 en 0x1D7xxx n'a toujours pas de nom).
 - EDC16U1 : identification des fichiers Touareg V10, où un seul des deux numéros d'ECU est trouvé aujourd'hui (six fichiers au banc).
-- Compatibilité XDF (fichiers de définition TunerPro, pour lire et écrire des listes de maps dans ce format). Prévu pour plus tard, quand j'aurai le temps de m'y pencher.
+- L'import de définitions de maps (projets WinOLS `.ols`, fichiers `.xdf` TunerPro, mappacks JSON) est en **bêta** : un fichier que le détecteur ne connaît pas s'ouvre quand même, et les maps décrites par son fichier de définitions s'affichent et sont enregistrées avec le projet. Il reste beaucoup de travail avant de couvrir tous les cas : les versions de WinOLS autres que la 5, les dispositions que ce lecteur ne comprend pas encore, les axes et les conversions qu'il lit autrement, et des bugs encore à trouver. Écrire une liste de maps au format `.xdf` n'est pas encore là.
+- Lire les numéros hardware et software des fichiers que ZedSuite ne détecte pas. Aujourd'hui ces numéros viennent du détecteur de chaque famille de calculateurs : un fichier inconnu n'en affiche aucun, ni dans la fenêtre d'import ni sur le projet. Les trouver sur n'importe quel fichier est un gros chantier, prévu pour plus tard.
 
 ## Demandé par les utilisateurs, à l'étude
 

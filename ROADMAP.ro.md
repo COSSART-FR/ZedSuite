@@ -14,7 +14,8 @@ Pentru a cere o funcție sau a raporta un bug: deschideți un issue pe [GitHub](
 - EDC15VM: de verificat pe mașină că hărțile SVRL sunt cu adevărat active atunci când detectorul le găsește.
 - EDC16U31: detecție mai bună, mai lipsesc câteva fișiere EDC16U31 din bancul de test pentru a o termina cum trebuie (familia 12x12 de la 0x1D7xxx nu are încă nume).
 - EDC16U1: identificarea fișierelor Touareg V10, la care astăzi este găsit doar unul dintre cele două numere de ECU (șase fișiere în bancul de test).
-- Compatibilitate XDF (fișiere de definiție TunerPro, pentru citirea și scrierea listelor de hărți în acest format). Planificat pentru mai târziu, când voi avea timp să mă ocup de asta.
+- Importul definițiilor de hărți (proiecte WinOLS `.ols`, fișiere `.xdf` TunerPro, mappack-uri JSON) este în **beta**: un fișier pe care detectorul nu îl cunoaște se deschide totuși, iar hărțile descrise de fișierul său de definiții sunt afișate și salvate cu proiectul. Mai este mult de lucru până la acoperirea tuturor cazurilor: versiunile de WinOLS în afară de 5, dispunerile pe care acest cititor nu le înțelege încă, axele și conversiile pe care le citește altfel, și erori încă de găsit. Scrierea unei liste de hărți în format `.xdf` încă nu există.
+- Citirea numerelor de hardware și software ale fișierelor pe care ZedSuite nu le detectează. Astăzi aceste numere vin de la detectorul fiecărei familii de calculatoare: un fișier necunoscut nu afișează niciunul, nici în fereastra de import, nici pe proiect. Găsirea lor în orice fișier este o muncă mare, planificată pentru mai târziu.
 
 ## Cerut de utilizatori, în analiză
 

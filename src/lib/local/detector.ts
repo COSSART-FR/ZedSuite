@@ -67,6 +67,87 @@ export async function listEcus(): Promise<{ ecus: any[]; total: number; version:
   return invoke("list_ecus");
 }
 
+export interface OlsVersionInfo {
+  index: number;
+  size: number;
+  /** Human-readable label ("Original", "Stage 2 (DPFoff EGRoff)", ...) when the file's own
+   *  RevisionTag could be confidently split per version; absent otherwise. */
+  label?: string;
+}
+
+export interface OlsInspection {
+  make: string;
+  model: string;
+  manufacturer: string;
+  ecu_name: string;
+  hw_number: string;
+  sw_number: string;
+  versions: OlsVersionInfo[];
+  /** Version du format du conteneur (804 = WinOLS 5.84). */
+  format_version: number;
+  /** Maps définies dans le projet (0 : aucune, ou disposition WinOLS 4.x non lue). */
+  maps_count: number;
+  /** "hilo" / "lohi" : ordre des octets de la majorité de ces maps. */
+  byte_order?: string | null;
+}
+
+/**
+ * Recognises a `.ols` WinOLS project container (as opposed to a raw ECU dump) and lists its
+ * saved versions. Returns `null` when the file isn't one -- callers should fall back to treating
+ * it as a raw dump exactly as before this existed.
+ */
+export async function inspectOlsContainer(fileDataBase64: string): Promise<OlsInspection | null> {
+  return invoke<OlsInspection | null>("inspect_ols_container", { fileDataBase64 });
+}
+
+/**
+ * Extracts one saved version's raw ROM bytes out of a `.ols` container (`versionIndex` from
+ * `inspectOlsContainer`'s returned list). The result is base64-encoded raw dump bytes: feed it to
+ * `identifyEcu`/`detectMaps` exactly as if it had been the original file.
+ */
+export async function extractOlsVersion(fileDataBase64: string, versionIndex: number): Promise<string> {
+  return invoke<string>("extract_ols_version", { fileDataBase64, versionIndex });
+}
+
+/**
+ * Les maps définies dans un projet WinOLS (.ols), dans la forme d'un résultat
+ * de détection : c'est ce qu'un projet d'un calculateur sans détecteur
+ * ZedSuite affiche dans l'éditeur.
+ */
+export async function extractOlsMaps(fileDataBase64: string): Promise<DetectionResults> {
+  return invoke<DetectionResults>("extract_ols_maps", { fileDataBase64 });
+}
+
+export interface ImportedDefinitions {
+  success: boolean;
+  /** « XDF » (TunerPro) ou « JSON » (mappack), tel que reconnu dans le fichier. */
+  format: string;
+  total_maps: number;
+  maps: any[];
+  /** « hilo » / « lohi » : ordre des octets décrit par ces définitions. */
+  byte_order?: string | null;
+  processing_time_ms: number;
+}
+
+/**
+ * Lit un fichier de définitions de maps apporté par l'utilisateur — un .xdf
+ * TunerPro ou un mappack JSON — pour un binaire que le détecteur ZedSuite ne
+ * reconnaît pas. Le format est reconnu au contenu, pas à l'extension.
+ * `romSize` est la taille du binaire du projet : une définition qui pointe
+ * en dehors est écartée.
+ */
+export async function importMapDefinitions(args: {
+  fileDataBase64: string;
+  fileName: string;
+  romSize: number;
+}): Promise<ImportedDefinitions> {
+  return invoke<ImportedDefinitions>("import_map_definitions", {
+    fileDataBase64: args.fileDataBase64,
+    fileName: args.fileName,
+    romSize: args.romSize,
+  });
+}
+
 /**
  * Version courante du moteur de détection. Un projet dont les résultats
  * portent une version antérieure est re-scanné à l'ouverture : sans ça il

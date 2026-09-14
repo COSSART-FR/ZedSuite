@@ -657,6 +657,8 @@ function DashboardContent() {
         notes: file.notes,
         hardware_version: file.hardware_version,
         software_version: file.software_version,
+        maps_source: file.maps_source,
+        byte_order: file.byte_order,
         created: file.created,
         detectionResults: detectionResults,
         fileId: file.id,

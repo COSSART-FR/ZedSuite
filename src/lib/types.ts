@@ -32,6 +32,15 @@ export interface FileRecord {
   map_display_settings?: any;
   /** Tri de la liste des maps choisi par l'utilisateur (mémorisé avec le projet) */
   map_sort_mode?: "address" | "name" | "name-desc";
+  /** D'où vient la liste des maps : le détecteur ZedSuite, le projet WinOLS
+   *  (.ols) d'un calculateur sans détecteur, ou un fichier de définitions que
+   *  l'utilisateur importe (« imported » : .xdf TunerPro ou mappack JSON).
+   *  Les trois derniers cas ne sont jamais re-détectés. */
+  maps_source?: "detector" | "ols" | "both" | "imported";
+  /** Ordre des octets déclaré par le projet WinOLS ("hilo" = poids fort d'abord) */
+  byte_order?: "hilo" | "lohi";
+  /** Nom du calculateur tel que noté dans le projet WinOLS */
+  ols_ecu_name?: string;
   created: string;
   updated: string;
 }

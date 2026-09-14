@@ -19,6 +19,13 @@ export interface MapLayoutInput {
   data_type?: string;
   /** Lignes fichier rangées dans l'ordre inverse de l'axe Y (bloc Duration de certains EDC16) */
   rows_reversed?: boolean;
+  /**
+   * Map venue d'un fichier de définitions de l'utilisateur (« OLS », « XDF »,
+   * « JSON ») et non du détecteur. Sa disposition est celle que le fichier
+   * déclare : aucune des règles de transposition ci-dessous ne s'y applique,
+   * elles ne valent que pour les maps que le détecteur nomme lui-même.
+   */
+  external_source?: string | null;
   dimensions?: {
     TwoDimensional?: { rows: number; cols: number };
     OneDimensional?: { length: number };
@@ -112,6 +119,8 @@ function apiDims(map: MapLayoutInput): { apiRows: number; apiCols: number } {
  * Maps dont la vue transpose les dimensions API — même règle que le MapViewer.
  */
 export function shouldSwapAxes(map: MapLayoutInput): boolean {
+  // Définitions importées : la grille du fichier fait foi.
+  if (map.external_source) return false;
   const mapName = (map.name || "").toLowerCase();
   const description = (map.description || "").toLowerCase();
 
@@ -150,6 +159,25 @@ export function shouldSwapAxes(map: MapLayoutInput): boolean {
 export function resolveMapCellLayout(map: MapLayoutInput): MapCellLayout {
   const name = (map.name || "").toLowerCase();
   const { apiRows, apiCols } = apiDims(map);
+  const dataTypeStr = String(map.data_type || "");
+  const bytesPerCell = dataTypeStr === "UInt8" || dataTypeStr === "Int8" ? 1 : 2;
+
+  // Map importée d'un .ols, d'un .xdf ou d'un mappack JSON : lignes et
+  // colonnes sont celles du fichier, lues dans l'ordre du fichier. Les
+  // règles qui suivent reconnaissent des maps au nom que le détecteur
+  // donne ; appliquées ici, un « Drivers wish » écrit à la main dans WinOLS
+  // serait transposé sans raison.
+  if (map.external_source) {
+    return {
+      apiRows,
+      apiCols,
+      rows: apiRows,
+      cols: apiCols,
+      cellBytes: bytesPerCell,
+      axesSwapped: false,
+      cellIndex: (row: number, col: number) => row * apiCols + col,
+    };
+  }
 
   const isInjectorDuration = name.includes("injector duration") && !name.includes("selector");
   const isInjectorDurationNon00 = isInjectorDuration && !name.includes("duration 00");
@@ -266,6 +294,23 @@ export interface MapAxisSources {
  * envoyait les quantités, brutes, dans l'axe de régime (issue #27, 019CC).
  */
 export function resolveAxisSources(map: MapAxisSourceInput): MapAxisSources {
+  if (map.external_source) {
+    // Définitions importées : chaque axe garde l'adresse, le facteur et
+    // l'offset que le fichier lui donne.
+    return {
+      x: {
+        address: map.x_axis_address || 0,
+        correction: map.x_axis_correction ?? 1.0,
+        offset: map.x_axis_offset ?? 0.0,
+      },
+      y: {
+        address: map.y_axis_address || 0,
+        correction: map.y_axis_correction ?? 1.0,
+        offset: map.y_axis_offset ?? 0.0,
+      },
+      swapped: false,
+    };
+  }
   const name = (map.name || "").toLowerCase();
   const isInjectorDuration = name.includes("injector duration") && !name.includes("selector");
   const isIdleRpm = name.includes("idle rpm");
