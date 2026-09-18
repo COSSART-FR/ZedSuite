@@ -1179,6 +1179,7 @@ impl EDC15PDetector {
                                         x_axis_values: None,
                                         y_axis_values: None,
                                         external_source: None,
+                                        as_stored: None,
                                     };
 
                                     detected_addresses.insert(map_offset as u32);
@@ -2074,6 +2075,7 @@ impl EDC15PDetector {
                         x_axis_values: None,
                         y_axis_values: None,
                         external_source: None,
+                        as_stored: None,
                     };
 
                     detected_addresses.insert(map_start as u32);
@@ -2203,6 +2205,7 @@ impl EDC15PDetector {
                     x_axis_values: None,
                     y_axis_values: None,
                     external_source: None,
+                    as_stored: None,
                 };
 
                 detected_addresses.insert(map_start as u32);
@@ -2315,6 +2318,7 @@ impl EDC15PDetector {
                 x_axis_values: None,
                 y_axis_values: None,
                 external_source: None,
+                as_stored: None,
             };
 
             if already_claimed {
@@ -2526,6 +2530,7 @@ impl EDC15PDetector {
                                                             x_axis_values: None,
                                                             y_axis_values: None,
                                                             external_source: None,
+                                                            as_stored: None,
                                                         };
 
                                                         maps.push(smoke_map);
@@ -2576,6 +2581,7 @@ impl EDC15PDetector {
                                         x_axis_values: None,
                                         y_axis_values: None,
                                         external_source: None,
+                                        as_stored: None,
                                     };
 
                                     maps.push(smoke_map);

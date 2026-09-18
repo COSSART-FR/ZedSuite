@@ -60,6 +60,15 @@ pub struct DetectedMap {
     /// celui de l'app, et n'entre pas dans le rapport de complétude.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub external_source: Option<String>,
+    /// Map affichée exactement comme elle est stockée : lignes = axe Y à
+    /// `y_axis_address`, colonnes = axe X à `x_axis_address`, facteurs tels
+    /// qu'émis. Les règles de transposition du frontend, écrites pour les
+    /// familles VAG et déclenchées sur le NOM de la map (« Injector duration
+    /// 01-05 » lue rpm × IQ, « Torque limiter » 21×3…), ne s'appliquent pas.
+    /// Émis par les détecteurs dont les enregistrements sont auto-décrits
+    /// (EDC15C4).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub as_stored: Option<bool>,
 }
 
 /// Information about a MapSelector attached to a map
@@ -223,6 +232,7 @@ impl DetectedMap {
             x_axis_values: None,
             y_axis_values: None,
             external_source: None,
+            as_stored: None,
         }
     }
 }

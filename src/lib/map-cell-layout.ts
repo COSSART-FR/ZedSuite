@@ -26,6 +26,13 @@ export interface MapLayoutInput {
    * elles ne valent que pour les maps que le détecteur nomme lui-même.
    */
   external_source?: string | null;
+  /**
+   * Map émise par un détecteur dont les enregistrements sont auto-décrits
+   * (EDC15C4) : affichée exactement comme stockée, lignes = axe Y, colonnes =
+   * axe X, facteurs tels qu'émis. Les règles ci-dessous, déclenchées sur le
+   * NOM de la map et écrites pour les familles VAG, ne s'y appliquent pas.
+   */
+  as_stored?: boolean | null;
   dimensions?: {
     TwoDimensional?: { rows: number; cols: number };
     OneDimensional?: { length: number };
@@ -119,8 +126,8 @@ function apiDims(map: MapLayoutInput): { apiRows: number; apiCols: number } {
  * Maps dont la vue transpose les dimensions API — même règle que le MapViewer.
  */
 export function shouldSwapAxes(map: MapLayoutInput): boolean {
-  // Définitions importées : la grille du fichier fait foi.
-  if (map.external_source) return false;
+  // Définitions importées, ou maps auto-décrites : la grille du fichier fait foi.
+  if (map.external_source || map.as_stored) return false;
   const mapName = (map.name || "").toLowerCase();
   const description = (map.description || "").toLowerCase();
 
@@ -166,8 +173,9 @@ export function resolveMapCellLayout(map: MapLayoutInput): MapCellLayout {
   // colonnes sont celles du fichier, lues dans l'ordre du fichier. Les
   // règles qui suivent reconnaissent des maps au nom que le détecteur
   // donne ; appliquées ici, un « Drivers wish » écrit à la main dans WinOLS
-  // serait transposé sans raison.
-  if (map.external_source) {
+  // serait transposé sans raison. Même chose pour une map auto-décrite
+  // (EDC15C4) : ses dimensions sont celles du fichier.
+  if (map.external_source || map.as_stored) {
     return {
       apiRows,
       apiCols,
@@ -294,7 +302,7 @@ export interface MapAxisSources {
  * envoyait les quantités, brutes, dans l'axe de régime (issue #27, 019CC).
  */
 export function resolveAxisSources(map: MapAxisSourceInput): MapAxisSources {
-  if (map.external_source) {
+  if (map.external_source || map.as_stored) {
     // Définitions importées : chaque axe garde l'adresse, le facteur et
     // l'offset que le fichier lui donne.
     return {

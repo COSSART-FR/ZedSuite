@@ -3630,12 +3630,13 @@ function EditorPageContent() {
     // Check if this map needs dimension swap (same logic as map-viewer.tsx)
     const apiRows = dim?.rows || 1;
     const apiCols = dim?.cols || 1;
-    const isTorqueLimiter = mapName.includes("torque limiter");
-    const isIQByMap = mapName.includes("iq by map");
-    const isIQByMAF = mapName.includes("iq by maf");
-    const isInjectorDuration = mapName.includes("injector duration") && !mapName.includes("selector");
+    const asStored = (map as any)?.as_stored === true;
+    const isTorqueLimiter = !asStored && mapName.includes("torque limiter");
+    const isIQByMap = !asStored && mapName.includes("iq by map");
+    const isIQByMAF = !asStored && mapName.includes("iq by maf");
+    const isInjectorDuration = !asStored && mapName.includes("injector duration") && !mapName.includes("selector");
     const isInjectorDurationNon00 = isInjectorDuration && !mapName.includes("duration 00");
-    const isEgrMap = mapName.includes("egr") && !mapName.includes("temperature") && !mapName.includes("temp");
+    const isEgrMap = !asStored && mapName.includes("egr") && !mapName.includes("temperature") && !mapName.includes("temp");
 
     // Determine if dimensions need to be swapped
     let needsSwap = false;

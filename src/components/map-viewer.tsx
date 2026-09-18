@@ -411,6 +411,8 @@ interface MapViewerProps {
     /** « OLS », « XDF » ou « JSON » : map venue d'un fichier de définitions
      *  importé. Sa disposition est celle que le fichier déclare. */
     external_source?: string | null;
+    /** Map auto-décrite (EDC15C4) : affichée exactement comme stockée. */
+    as_stored?: boolean | null;
     /** Points d'axe écrits dans le fichier de définitions au lieu d'être lus
      *  dans le binaire (axe fixe d'un XDF TunerPro). */
     x_axis_values?: number[] | null;
@@ -2192,16 +2194,19 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
 
 
     const mapNameLower = (mapData.name || "").toLowerCase();
-    const isInjectorDuration = mapNameLower.includes("injector duration") && !mapNameLower.includes("selector");
+    // Map auto-décrite (EDC15C4, as_stored) : aucune des règles par nom
+    // ci-dessous, la grille et les axes sont ceux du fichier.
+    const asStored = mapData.as_stored === true;
+    const isInjectorDuration = !asStored && mapNameLower.includes("injector duration") && !mapNameLower.includes("selector");
     const isInjectorDuration00 = isInjectorDuration && mapNameLower.includes("duration 00");
     const isInjectorDurationNon00 = isInjectorDuration && !isInjectorDuration00;
     // EDC16U34 names these maps "Duration NN" (without the "Injector" prefix).
     // We DON'T merge them into isInjectorDuration above to avoid changing axis
     // swap / read-order logic that's tuned for "Injector Duration"; instead we
     // expose a separate flag used only by display-layer ordering.
-    const isU34DurationMap = /^duration \d+$/.test(mapNameLower);
-    const isEgrMap = mapNameLower === "egr" || (mapNameLower.includes("egr") && !mapNameLower.includes("temperature"));
-    const isIdleRpm = mapNameLower.includes("idle rpm");
+    const isU34DurationMap = !asStored && /^duration \d+$/.test(mapNameLower);
+    const isEgrMap = !asStored && (mapNameLower === "egr" || (mapNameLower.includes("egr") && !mapNameLower.includes("temperature")));
+    const isIdleRpm = !asStored && mapNameLower.includes("idle rpm");
 
     // Get real dimensions from API
     // Handle both 2D and 1D maps
@@ -2373,7 +2378,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
     // 
     // Il faut ├®changer les adresses MAIS PAS les corrections pour Start IQ!
     // Les corrections doivent ├¬tre ├®chang├®es car le backend les a invers├®es!
-    const isBoostTarget = mapNameLower.includes("boost target map");
+    const isBoostTarget = !asStored && mapNameLower.includes("boost target map");
     const isBoostTarget280 = isBoostTarget && mapData.size === 280;
 
     // Boost target 280: backend NOW handles axis swap correctly

@@ -160,6 +160,9 @@ impl EDC15C4Detector {
         m.offset = Some(spec.z_offset);
         m.confidence = spec.confidence;
         m.is_little_endian = Some(true);
+        // Rows = first axis, cols = second axis, exactly as stored: keep the
+        // frontend's VAG name-based transposition rules away from these maps.
+        m.as_stored = Some(true);
         m.codeblock_id = Some(1);
         m.codeblock_start_address = Some(layout.block_start as u32);
         m.codeblock_end_address = Some(layout.block_end as u32);
@@ -320,6 +323,7 @@ mod tests {
         assert_eq!(d0.x_axis_address, Some(0x71800 + 4 + 30 + 4));
         assert_eq!(d0.address, 0x71800 + 4 + 30 + 4 + 64);
         assert_eq!(d0.is_little_endian, Some(true));
+        assert_eq!(d0.as_stored, Some(true), "the frontend must not apply its VAG name rules");
         assert_eq!(d0.y_axis_correction, Some(0.1));
         assert_eq!(d0.x_axis_correction, Some(0.01));
         assert_eq!(d0.x_label.as_deref(), Some("IQ (mm³/st)"));

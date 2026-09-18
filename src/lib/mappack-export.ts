@@ -60,6 +60,7 @@ export interface ExportMapData {
   /** « OLS », « XDF » ou « JSON » : map venue d'un fichier de définitions
    *  importé, exportée telle que ce fichier la décrit. */
   external_source?: string | null;
+  as_stored?: boolean | null;
 }
 
 type WinolsMap = Record<string, string>;
@@ -153,11 +154,12 @@ function exportLayout(m: ExportMapData): { rows: number; cols: number; xAxis: Ex
     rows_reversed: m.rows_reversed === true,
     dimensions: m.dimensions,
     external_source: m.external_source,
+    as_stored: m.as_stored,
   });
   const name = (m.name || "").toLowerCase();
-  const rowMajorSwapped =
+  const rowMajorSwapped = !m.as_stored && (
     name.includes("torque limiter") || name.includes("iq by map") || name.includes("iq by maf") ||
-    (name.includes("injector duration") && !name.includes("selector"));
+    (name.includes("injector duration") && !name.includes("selector")));
   if (layout.axesSwapped && !rowMajorSwapped) {
     // Transposition standard (display[r][c] = file[c][r]) : le fichier reste
     // en dimensions API, avec les axes API
