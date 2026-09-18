@@ -164,5 +164,26 @@
     ],
     "mappack_export_enabled": true,
     "mappack_price": 40
+  },
+  {
+    "id": "edc15c4",
+    "name": "EDC15C4",
+    "manufacturer": "Bosch",
+    "family": "EDC15",
+    "processor": "C167",
+    "endianness": "Little-Endian",
+    "file_sizes": [
+      "512KB"
+    ],
+    "vehicles": "BMW DDE 4.0 - M57 / M47 common rail (E39 525d/530d, E46 320d/330d, E38 730d, E53 X5 3.0d)",
+    "detection_method": "Skeleton - self-describing records, 2 families calibrated on 1 dump",
+    "status": "skeleton",
+    "enabled": false,
+    "map_categories": [
+      "Injection system",
+      "Turbo boost pressure"
+    ],
+    "mappack_export_enabled": false,
+    "mappack_price": 0
   }
 ]

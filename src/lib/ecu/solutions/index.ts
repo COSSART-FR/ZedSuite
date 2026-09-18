@@ -10,6 +10,8 @@
  * jokers, puis écriture des paliers 0, 20, 40 … 260 km/h.
  */
 
+import { isVagEdc15 } from '../../ecu-family';
+
 export interface BinaryPatch {
   address: number; // Adresse absolue dans le fichier
   data: number[]; // Octets à écrire
@@ -240,7 +242,7 @@ const SOLUTION_IMPLEMENTATIONS: Record<string, SolutionImplementation> = {
 export function getSolutionsForECU(ecuType: string | undefined): ECUSolutionsConfig | null {
   if (!ecuType) return null;
   const upper = ecuType.toUpperCase();
-  if (!upper.includes('EDC15')) return null;
+  if (!isVagEdc15(upper)) return null;
 
   return {
     ecuType: upper.includes('VM') || upper.includes('EDC15V') ? 'EDC15VM' : 'EDC15P',

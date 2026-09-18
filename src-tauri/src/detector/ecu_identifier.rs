@@ -52,6 +52,7 @@ pub enum ECUType {
     EDC15P,      // VAG (VW, Audi, Seat, Skoda) - MPC555/556
     EDC15C,      // PSA (Peugeot, Citroën)
     EDC15M,      // BMW, Rover
+    EDC15C4,     // BMW DDE 4.0 (M57 / M47 common rail) - C167, 512KB
     EDC15V,      // Volvo
     EDC15VM,     // Various
 
@@ -134,6 +135,16 @@ impl ECUIdentifier {
         // Identify them explicitly so they can never pass for an EDC16.
         if let Some(id) = Self::identify_unsupported_bosch(data) {
             log::debug!("🚫 Unsupported Bosch family detected: {:?}", id.ecu_type);
+            return id;
+        }
+
+        // 0.5 BMW EDC15C4 gate. MUST run before the VAG EDC15 logic: the
+        // file is a 512KB C167 dump with the same self-describing record
+        // format as the EDC15P, and identify_by_structure() / the ASCII
+        // heuristics would otherwise be free to call it EDC15P and hand it
+        // to a detector calibrated on VAG layouts (and to the VAG checksum).
+        if let Some(id) = Self::identify_bmw_edc15c4(data) {
+            log::debug!("Identified as BMW EDC15C4: {:?}", id.variant);
             return id;
         }
 
@@ -1199,6 +1210,85 @@ impl ECUIdentifier {
         Self::unknown_ecu(0.20)
     }
     
+    /// Positive identification of a Bosch EDC15C4 (BMW DDE 4.0).
+    ///
+    /// Evidence required, ALL of it:
+    ///   A. exactly 512 KB;
+    ///   B. the signed calibration block signature `67 FF FF FF FF FF FF "V2.0"`
+    ///      (the VAG EDC15 carry "V4.1" at the same place - a file with a
+    ///      V4.1 signature is refused here);
+    ///   C. the Bosch TSW header `TSW V<x.yy> <date> <time> C4<x>/...` in the
+    ///      first 64 KB - the family token "C4" is what says EDC15C4;
+    ///   D. no VAG part number anywhere (veto).
+    ///
+    /// The software number is the 10-digit "1037......" string closest to
+    /// the end of the file (0x7FEF0 on the reference dump). There is no
+    /// 0281 hardware string in a DDE 4.0 dump, so hardware_version is None.
+    fn identify_bmw_edc15c4(data: &[u8]) -> Option<ECUIdentification> {
+        use crate::detector::ecu::bosch::edc15c4::layout as c4;
+        if data.len() != c4::DUMP_SIZE {
+            return None;
+        }
+        if Self::has_v41_signature(data) || c4::find_v20_signature(data).is_none() {
+            return None;
+        }
+        for vag in [&b"038906"[..], b"03G906", b"070906", b"045906", b"028906"] {
+            if Self::contains_sequence(data, vag) {
+                return None;
+            }
+        }
+        let tsw = Self::extract_tsw_header(data)?;
+        // "TSW V2.40 090799 1418 C4B/ESB/43": the 4th token names the family.
+        let family_token = tsw.split_whitespace().nth(4)?;
+        if !family_token.starts_with("C4") {
+            return None;
+        }
+
+        Some(ECUIdentification {
+            manufacturer: ECUManufacturer::Bosch,
+            ecu_type: ECUType::EDC15C4,
+            variant: Some(format!("BMW DDE 4.0 ({})", family_token)),
+            software_version: Self::extract_last_bosch_1037_number(data),
+            hardware_version: None,
+            part_number: None,
+            confidence: 0.88,
+        })
+    }
+
+    /// The ASCII "TSW V..." build header of a Bosch EDC15 (first 64 KB),
+    /// up to the first non-printable byte. Example on a DDE 4.0:
+    /// `TSW V2.40 090799 1418 C4B/ESB/43`.
+    fn extract_tsw_header(data: &[u8]) -> Option<String> {
+        let limit = data.len().min(0x10000);
+        let zone = &data[..limit];
+        let pos = zone.windows(5).position(|w| w == b"TSW V")?;
+        let end = zone[pos..]
+            .iter()
+            .position(|&b| !(0x20..0x7F).contains(&b))
+            .map(|e| pos + e)
+            .unwrap_or(limit);
+        let s = String::from_utf8(zone[pos..end].to_vec()).ok()?;
+        if s.len() < 12 {
+            return None;
+        }
+        Some(s.trim_end().to_string())
+    }
+
+    /// Last "1037" + 6 digits string of the file (Bosch software number).
+    fn extract_last_bosch_1037_number(data: &[u8]) -> Option<String> {
+        let mut found = None;
+        let mut i = 0;
+        while i + 10 <= data.len() {
+            if &data[i..i + 4] == b"1037" && data[i + 4..i + 10].iter().all(|c| c.is_ascii_digit()) {
+                found = String::from_utf8(data[i..i + 10].to_vec()).ok();
+                i += 10;
+            } else {
+                i += 1;
+            }
+        }
+        found
+    }
+
     // Helper methods
     
     fn unknown_ecu(confidence: f32) -> ECUIdentification {
@@ -1722,6 +1812,48 @@ mod tests {
         assert_ne!(id.ecu_type, ECUType::EDC16U34);
         assert_ne!(id.ecu_type, ECUType::EDC16U31);
         assert_eq!(id.ecu_type, ECUType::EDC17C);
+    }
+
+    /// EDC15C4 (BMW DDE 4.0): V2.0 block + "TSW ... C4B" header => EDC15C4,
+    /// never EDC15P, even with EDC15-looking axis ids in the file.
+    #[test]
+    fn test_bmw_edc15c4_is_identified_and_not_edc15p() {
+        let mut data = vec![0xC3u8; 524288];
+        data[0x8000..0x8000 + 32].copy_from_slice(b"TSW V2.40 090799 1418 C4B/ESB/43");
+        data[0x70000] = 0xF9;
+        data[0x70001..0x70001 + 11].copy_from_slice(&crate::detector::ecu::bosch::edc15c4::layout::V20_SIGNATURE);
+        data[0x7FEF0..0x7FEF0 + 10].copy_from_slice(b"1037351632");
+        for i in (0x71800..0x72000).step_by(2) {
+            data[i] = 0x16;
+            data[i + 1] = 0xC0;
+        }
+        let id = ECUIdentifier::identify(&data);
+        assert_eq!(id.ecu_type, ECUType::EDC15C4, "got {:?}", id.ecu_type);
+        assert_eq!(id.manufacturer, ECUManufacturer::Bosch);
+        assert_eq!(id.software_version.as_deref(), Some("1037351632"));
+        assert!(id.confidence > 0.8);
+    }
+
+    /// A VAG EDC15P (V4.1 block, 038906 part) must not become EDC15C4 even
+    /// with a TSW header naming a C4 family.
+    #[test]
+    fn test_vag_v41_file_is_not_edc15c4() {
+        let mut data = vec![0xC3u8; 524288];
+        data[0x8000..0x8000 + 32].copy_from_slice(b"TSW V2.40 090799 1418 C4B/ESB/43");
+        put_v41_signature(&mut data, 0x50001);
+        data[0x9000..0x9009].copy_from_slice(b"038906019");
+        let id = ECUIdentifier::identify(&data);
+        assert_ne!(id.ecu_type, ECUType::EDC15C4);
+    }
+
+    /// The V2.0 block alone (no TSW C4 header) is not enough evidence.
+    #[test]
+    fn test_v20_block_without_c4_header_is_not_edc15c4() {
+        let mut data = vec![0xC3u8; 524288];
+        data[0x70000] = 0xF9;
+        data[0x70001..0x70001 + 11].copy_from_slice(&crate::detector::ecu::bosch::edc15c4::layout::V20_SIGNATURE);
+        let id = ECUIdentifier::identify(&data);
+        assert_eq!(id.ecu_type, ECUType::Unknown, "got {:?}", id.ecu_type);
     }
 
     #[test]

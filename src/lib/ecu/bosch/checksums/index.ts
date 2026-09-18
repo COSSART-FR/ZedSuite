@@ -19,6 +19,7 @@ export type { Edc16Region, Edc16RegionStatus } from './edc16-checksum';
 
 import { correctEDC15PChecksum } from './edc15p-checksum';
 import { correctEDC16Checksum } from './edc16-checksum';
+import { isEdc15c4 } from '../../../ecu-family';
 
 /**
  * Correct checksums based on ECU type
@@ -35,6 +36,13 @@ export function correctChecksumByEcuType(
   if (!ecuType) return null;
 
   const ecuTypeUpper = ecuType.toUpperCase();
+
+  // EDC15C4 (BMW DDE 4.0) : bloc signé « V2.0 », algorithme inconnu à ce
+  // jour. Surtout pas le correcteur VAG v4.1 (il écrirait des sommes à des
+  // adresses VAG fixes) : pas de correction, le fichier est rendu intact.
+  if (isEdc15c4(ecuTypeUpper)) {
+    return null;
+  }
 
   // Famille EDC15 — EDC15P, EDC15V, EDC15VM, EDC15M et EDC15C partagent
   // l'algorithme Bosch VAG TDI v4.1 (mêmes seeds, mêmes constantes et même
@@ -61,6 +69,7 @@ export function isChecksumSupported(ecuType: string | undefined): boolean {
   if (!ecuType) return false;
 
   const ecuTypeUpper = ecuType.toUpperCase();
+  if (isEdc15c4(ecuTypeUpper)) return false;
 
   // Toute la famille EDC15 (v4.1) et toute la famille EDC16
   const supportedTypes = ['EDC15', 'EDC16'];

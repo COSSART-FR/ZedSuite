@@ -35,6 +35,10 @@ export const SUPPORTED_ECUS = new Set([
   "EDC16U1",
   "EDC16U31",
   "EDC16U34",
+  // "EDC15C4",  // BMW DDE 4.0 - uncomment once the detector is calibrated
+  //             // beyond its two families (see docs/PORTING-EDC15C4.md).
+  //             // Enabling it early would let users import a file the
+  //             // engine can only partially map.
 ]);
 
 export async function identifyEcu(

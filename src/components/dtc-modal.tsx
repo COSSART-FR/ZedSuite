@@ -4,6 +4,7 @@ import { useState, useMemo, useCallback, useEffect } from "react";
 import { X, Search, AlertTriangle, Check, ChevronRight, Power, PowerOff, Cpu, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getModalGlassStyle } from "@/lib/modal-glass";
+import { isVagEdc15 } from "@/lib/ecu-family";
 import {
   detectEDC15PDTCs,
   detectEDC16DTCs,
@@ -68,7 +69,7 @@ export function DTCModal({
 
         let result: DTCDetectionResult;
 
-        if (ecuFamily.includes('EDC15')) {
+        if (isVagEdc15(ecuFamily)) {
           result = detectEDC15PDTCs(dataArray, ecuFamily.includes('VM') ? 'EDC15VM' : 'EDC15P');
         } else if (ecuFamily.includes('EDC16')) {
           result = detectEDC16DTCs(dataArray);

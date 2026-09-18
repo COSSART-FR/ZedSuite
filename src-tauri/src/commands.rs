@@ -220,7 +220,7 @@ pub fn import_map_definitions(
 ///   47 — Switch MAP/MAF des EDC16 (U1/U31/U34) et identification : un
 ///       EDC15VM sans référence VAG dans le binaire n'est plus pris
 ///       pour un EDC15P (2.5 V6).
-pub const DETECTOR_VERSION: u32 = 49;
+pub const DETECTOR_VERSION: u32 = 50;
 
 /// Version du moteur de détection, pour comparaison avec celle enregistrée
 /// dans un projet.
@@ -288,6 +288,11 @@ fn build_expected_report(
     data: &[u8],
 ) -> Option<Vec<ExpectedMapStatus>> {
     let ecu = ecu_type.unwrap_or("").to_uppercase();
+    // EDC15C4 (BMW DDE 4.0) before the EDC15 substring checks: it is not a
+    // VAG EDC15 and must never be scored against the VAG rules.
+    if ecu == "EDC15C4" {
+        return build_expected_report_edc15c4(maps);
+    }
     if ecu.contains("EDC15P") {
         return build_expected_report_edc15p(maps, data);
     }
@@ -594,6 +599,23 @@ fn build_expected_report_edc15p(
 /// règle SOI demande donc ≥1 par codeblock. ⚠ « IQ by MAP limiter » et le
 /// 2e « Start IQ » restent incertains sur la génération mono-SOI (en
 /// attente d'une référence externe VM).
+/// EDC15C4 (BMW DDE 4.0) - skeleton calibrated on one dump. The two
+/// invariants come from the ECU: six injector duration slots (one per
+/// duration map, as on every Bosch EDC15) and one boost target map. The
+/// list grows as families are promoted from hypothesis to calibrated
+/// (docs/PORTING-EDC15C4.md).
+fn build_expected_report_edc15c4(maps: &[DetectedMap]) -> Option<Vec<ExpectedMapStatus>> {
+    let count_prefix = |prefix: &str| -> usize {
+        maps.iter()
+            .filter(|m| m.name.as_deref().map(|n| n.starts_with(prefix)).unwrap_or(false))
+            .count()
+    };
+    Some(vec![
+        ExpectedMapStatus { label: "Injector duration 00-05".to_string(), expected: 6, found: count_prefix("Injector duration").min(6) },
+        ExpectedMapStatus { label: "Boost target map".to_string(), expected: 1, found: count_prefix("Boost target map").min(1) },
+    ])
+}
+
 fn build_expected_report_edc15vm(maps: &[DetectedMap]) -> Option<Vec<ExpectedMapStatus>> {
     use std::collections::HashSet;
     let codeblocks: HashSet<u32> = maps.iter().filter_map(|m| m.codeblock_id).collect();
