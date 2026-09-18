@@ -16,7 +16,7 @@
 import db from "./ecu-brand-db.json";
 
 export interface EcuBrandInfo {
-  /** Vehicle brand: Audi | Seat | Skoda | Volkswagen */
+  /** Vehicle brand: Audi | BMW | Seat | Skoda | Volkswagen */
   b: string;
   /** Vehicle model (e.g. "Golf", "Ibiza") when known */
   m?: string;

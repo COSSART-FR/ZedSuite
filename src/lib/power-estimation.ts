@@ -93,6 +93,10 @@ export const ENGINE_PRESETS = [
   { id: "4cyl20", label: "2.0 TDI — 4 cyl.", cylinders: 4, displacement: 1.968 },
   { id: "5cyl25", label: "2.5 TDI — 5 cyl.", cylinders: 5, displacement: 2.461 },
   { id: "6cyl30", label: "3.0 TDI — 6 cyl.", cylinders: 6, displacement: 2.967 },
+  // BMW M57D25 (E39 525d, EDC15C4). Quantities on that ECU are mm³/stroke,
+  // not mg: the estimate is ~16 % optimistic there until a density
+  // correction is added (docs/PORTING-EDC15C4.md).
+  { id: "6cyl25", label: "2.5d — 6 cyl. (M57D25)", cylinders: 6, displacement: 2.497 },
 ] as const;
 
 // Types de nez Firad (PD 8v) — capacité d'injection PROPRE en mg/coup,
@@ -1028,6 +1032,7 @@ export function computePowerCurves(
 /** Guess the engine preset from the project's metadata. */
 export function guessEnginePreset(engineType?: string, ecuType?: string): string {
   const s = `${engineType || ""} ${ecuType || ""}`.toLowerCase();
+  if (s.includes("edc15c4") || s.includes("m57")) return "6cyl25";
   if (s.includes("1.4") || s.includes("1,4")) return "3cyl14";
   if (s.includes("2.0") || s.includes("2,0") || s.includes("edc16")) return "4cyl20";
   if (s.includes("2.5") || s.includes("2,5")) return "5cyl25";

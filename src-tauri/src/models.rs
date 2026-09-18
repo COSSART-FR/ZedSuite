@@ -93,7 +93,7 @@ pub enum DataType {
 
 /// Standard map categories for EDC16/EDC15 ECUs
 /// Based on WinOLS/EcuSuite standard classification
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum MapCategory {
     /// Air control (MAF, EGR, swirl flaps)
     AirControl,

@@ -1212,46 +1212,69 @@ impl ECUIdentifier {
     
     /// Positive identification of a Bosch EDC15C4 (BMW DDE 4.0).
     ///
-    /// Evidence required, ALL of it:
+    /// Always required:
     ///   A. exactly 512 KB;
     ///   B. the signed calibration block signature `67 FF FF FF FF FF FF "V2.0"`
     ///      (the VAG EDC15 carry "V4.1" at the same place - a file with a
     ///      V4.1 signature is refused here);
-    ///   C. the Bosch TSW header `TSW V<x.yy> <date> <time> C4<x>/...` in the
-    ///      first 64 KB - the family token "C4" is what says EDC15C4;
     ///   D. no VAG part number anywhere (veto).
+    /// Then one of:
+    ///   C1. the Bosch TSW build header `TSW V<x.yy> <date> <time> C4<x>/...`
+    ///       in the first 64 KB - the family token "C4" says EDC15C4
+    ///       (confidence 0.88);
+    ///   C2. structural evidence for a file whose ASCII header was wiped
+    ///       (damos "ori" files ship that way): the V2.0 signature exactly
+    ///       at 0x70001, the pointer table marker `AA 05 00 00 00 00 55 AA`
+    ///       at 0x7FF00, and at least 100 self-describing map records in
+    ///       the block (confidence 0.75).
     ///
     /// The software number is the 10-digit "1037......" string closest to
-    /// the end of the file (0x7FEF0 on the reference dump). There is no
+    /// the end of the file (0x7FEF0 on the reference read). There is no
     /// 0281 hardware string in a DDE 4.0 dump, so hardware_version is None.
     fn identify_bmw_edc15c4(data: &[u8]) -> Option<ECUIdentification> {
         use crate::detector::ecu::bosch::edc15c4::layout as c4;
         if data.len() != c4::DUMP_SIZE {
             return None;
         }
-        if Self::has_v41_signature(data) || c4::find_v20_signature(data).is_none() {
+        if Self::has_v41_signature(data) {
             return None;
         }
+        let signature = c4::find_v20_signature(data)?;
         for vag in [&b"038906"[..], b"03G906", b"070906", b"045906", b"028906"] {
             if Self::contains_sequence(data, vag) {
                 return None;
             }
         }
-        let tsw = Self::extract_tsw_header(data)?;
+
+        let tsw = Self::extract_tsw_header(data);
         // "TSW V2.40 090799 1418 C4B/ESB/43": the 4th token names the family.
-        let family_token = tsw.split_whitespace().nth(4)?;
-        if !family_token.starts_with("C4") {
-            return None;
-        }
+        let family_token = tsw
+            .as_deref()
+            .and_then(|t| t.split_whitespace().nth(4))
+            .filter(|tok| tok.starts_with("C4"))
+            .map(|tok| tok.to_string());
+
+        let (variant, confidence) = if let Some(tok) = family_token {
+            (format!("BMW DDE 4.0 ({})", tok), 0.88)
+        } else {
+            const TABLE_MARKER: [u8; 8] = [0xAA, 0x05, 0x00, 0x00, 0x00, 0x00, 0x55, 0xAA];
+            let structural = signature == 0x70001
+                && data[0x7FF00..0x7FF08] == TABLE_MARKER
+                && c4::parse_records(data, 0x70000, 0x7C000).len() >= 100;
+            if !structural {
+                return None;
+            }
+            ("BMW DDE 4.0 (no build header)".to_string(), 0.75)
+        };
 
         Some(ECUIdentification {
             manufacturer: ECUManufacturer::Bosch,
             ecu_type: ECUType::EDC15C4,
-            variant: Some(format!("BMW DDE 4.0 ({})", family_token)),
+            variant: Some(variant),
             software_version: Self::extract_last_bosch_1037_number(data),
             hardware_version: None,
             part_number: None,
-            confidence: 0.88,
+            confidence,
         })
     }
 
@@ -1854,6 +1877,27 @@ mod tests {
         data[0x70001..0x70001 + 11].copy_from_slice(&crate::detector::ecu::bosch::edc15c4::layout::V20_SIGNATURE);
         let id = ECUIdentifier::identify(&data);
         assert_eq!(id.ecu_type, ECUType::Unknown, "got {:?}", id.ecu_type);
+    }
+
+    /// A damos "ori" with a wiped ASCII header: V2.0 at 0x70001, the pointer
+    /// table marker at 0x7FF00 and a block full of records => EDC15C4.
+    #[test]
+    fn test_headerless_edc15c4_is_identified_by_structure() {
+        let mut data = vec![0xC3u8; 524288];
+        data[0x70000] = 0xF9;
+        data[0x70001..0x70001 + 11].copy_from_slice(&crate::detector::ecu::bosch::edc15c4::layout::V20_SIGNATURE);
+        data[0x7FF00..0x7FF08].copy_from_slice(&[0xAA, 0x05, 0x00, 0x00, 0x00, 0x00, 0x55, 0xAA]);
+        // 120 tiny records [C016][2][1000][2000][z][z]
+        let mut off = 0x71800;
+        for _ in 0..120 {
+            for v in [0xC016u16, 2, 1000, 2000, 7, 9] {
+                data[off..off + 2].copy_from_slice(&v.to_le_bytes());
+                off += 2;
+            }
+        }
+        let id = ECUIdentifier::identify(&data);
+        assert_eq!(id.ecu_type, ECUType::EDC15C4, "got {:?}", id.ecu_type);
+        assert!(id.confidence < 0.8 && id.confidence > 0.7);
     }
 
     #[test]

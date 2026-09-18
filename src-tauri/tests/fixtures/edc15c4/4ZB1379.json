@@ -1,0 +1,257 @@
+{
+ "source": "Bosch A2L 4ZB1379 (project P079.VB4), addresses of the calibration maps",
+ "maps": [
+  {
+   "name": "EGR air mass target map",
+   "a2l": "arwMLGRDKF",
+   "address": 465984,
+   "rows": 12,
+   "cols": 16
+  },
+  {
+   "name": "Boost actuator duty limit (max)",
+   "a2l": "ldwGRmaxKF",
+   "address": 474900,
+   "rows": 16,
+   "cols": 4
+  },
+  {
+   "name": "Boost actuator duty limit (min)",
+   "a2l": "ldwGRminKF",
+   "address": 475076,
+   "rows": 16,
+   "cols": 4
+  },
+  {
+   "name": "Boost target map (eco)",
+   "a2l": "ldwSWoekKF",
+   "address": 475748,
+   "rows": 16,
+   "cols": 10
+  },
+  {
+   "name": "Boost actuator duty base map (eco)",
+   "a2l": "ldwTVoekKF",
+   "address": 476598,
+   "rows": 16,
+   "cols": 10
+  },
+  {
+   "name": "Boost actuator duty base map (sport)",
+   "a2l": "ldwTVspoKF",
+   "address": 476934,
+   "rows": 2,
+   "cols": 2
+  },
+  {
+   "name": "EGR duty base map",
+   "a2l": "arwDraTVKF",
+   "address": 478410,
+   "rows": 8,
+   "cols": 8
+  },
+  {
+   "name": "Rail pressure target map",
+   "a2l": "zuwPQGWKF",
+   "address": 479390,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Rail pressure maximum map",
+   "a2l": "zuwPQmaxKF",
+   "address": 480926,
+   "rows": 16,
+   "cols": 8
+  },
+  {
+   "name": "Injector duration 10 (no pilot)",
+   "a2l": "zuwAD_KF10",
+   "address": 482400,
+   "rows": 15,
+   "cols": 32
+  },
+  {
+   "name": "Injector duration 11 (no pilot)",
+   "a2l": "zuwAD_KF11",
+   "address": 483462,
+   "rows": 15,
+   "cols": 32
+  },
+  {
+   "name": "Injector duration 12 (no pilot)",
+   "a2l": "zuwAD_KF12",
+   "address": 484524,
+   "rows": 15,
+   "cols": 32
+  },
+  {
+   "name": "Injector duration 20 (with pilot)",
+   "a2l": "zuwAD_KF20",
+   "address": 485586,
+   "rows": 15,
+   "cols": 32
+  },
+  {
+   "name": "Injector duration 21 (with pilot)",
+   "a2l": "zuwAD_KF21",
+   "address": 486648,
+   "rows": 15,
+   "cols": 32
+  },
+  {
+   "name": "Injector duration 22 (with pilot)",
+   "a2l": "zuwAD_KF22",
+   "address": 487710,
+   "rows": 15,
+   "cols": 32
+  },
+  {
+   "name": "Pilot injection SOI (relative)",
+   "a2l": "zuwABVGWKF",
+   "address": 488688,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Pilot injection quantity",
+   "a2l": "zuwMEVGWKF",
+   "address": 489964,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Pilot injection quantity maximum",
+   "a2l": "zuwMVEmxKF",
+   "address": 490704,
+   "rows": 16,
+   "cols": 8
+  },
+  {
+   "name": "Main injection SOI earliest",
+   "a2l": "zuwABHmxKF",
+   "address": 491028,
+   "rows": 16,
+   "cols": 8
+  },
+  {
+   "name": "Main injection SOI (with pilot)",
+   "a2l": "zuwABHG1KF",
+   "address": 491284,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Main injection SOI (no pilot)",
+   "a2l": "zuwABHG2KF",
+   "address": 491796,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Driver wish 1 (low range)",
+   "a2l": "mrwFVLR_KF",
+   "address": 498842,
+   "rows": 12,
+   "cols": 8
+  },
+  {
+   "name": "Driver wish 2 (lower v_nenn)",
+   "a2l": "mrwFVHU_KF",
+   "address": 499082,
+   "rows": 12,
+   "cols": 8
+  },
+  {
+   "name": "Driver wish 3 (upper v_nenn)",
+   "a2l": "mrwFVHO_KF",
+   "address": 499322,
+   "rows": 12,
+   "cols": 8
+  },
+  {
+   "name": "Start quantity base map",
+   "a2l": "mrwSTMGRKF",
+   "address": 499632,
+   "rows": 8,
+   "cols": 10
+  },
+  {
+   "name": "Smoke limiter (dynamic)",
+   "a2l": "mrwBRDY_KF",
+   "address": 500562,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Full-load raise by coolant temperature",
+   "a2l": "mrwBWT_KF",
+   "address": 501140,
+   "rows": 8,
+   "cols": 8
+  },
+  {
+   "name": "Smoke limiter correction 1 (atmospheric pressure)",
+   "a2l": "mrwBRAkAKF",
+   "address": 501322,
+   "rows": 11,
+   "cols": 12
+  },
+  {
+   "name": "Smoke limiter correction 2 (air temperature)",
+   "a2l": "mrwBRAkLKF",
+   "address": 501676,
+   "rows": 11,
+   "cols": 12
+  },
+  {
+   "name": "Torque limiter (pull-away)",
+   "a2l": "mrwADB_KL",
+   "address": 502032,
+   "rows": 19,
+   "cols": 1
+  },
+  {
+   "name": "Torque limiter (raised)",
+   "a2l": "mrwBDBH_KL",
+   "address": 502118,
+   "rows": 19,
+   "cols": 1
+  },
+  {
+   "name": "Torque limiter (normal)",
+   "a2l": "mrwBDBN_KL",
+   "address": 502198,
+   "rows": 19,
+   "cols": 1
+  },
+  {
+   "name": "Torque limiter (low range)",
+   "a2l": "mrwBDBLRKL",
+   "address": 502272,
+   "rows": 16,
+   "cols": 1
+  },
+  {
+   "name": "Turbo protection full-load quantity",
+   "a2l": "mrwLDNB_KF",
+   "address": 502350,
+   "rows": 10,
+   "cols": 9
+  },
+  {
+   "name": "Smoke limiter",
+   "a2l": "mrwBRA_KF",
+   "address": 502602,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Smoke limiter (low range)",
+   "a2l": "mrwBRLWRKF",
+   "address": 503186,
+   "rows": 16,
+   "cols": 16
+  }
+ ]
+}

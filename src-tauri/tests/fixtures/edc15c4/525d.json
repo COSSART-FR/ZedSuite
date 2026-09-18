@@ -1,0 +1,221 @@
+{
+ "source": "E39 525d read (TSW V2.40 090799 C4B/ESB/43, SW 1037351632): detector output at calibration time, names cross-checked record by record against the 4ZB1379 A2L",
+ "maps": [
+  {
+   "name": "EGR air mass target map",
+   "address": 465914,
+   "rows": 13,
+   "cols": 16
+  },
+  {
+   "name": "Boost actuator duty limit (max)",
+   "address": 475006,
+   "rows": 16,
+   "cols": 4
+  },
+  {
+   "name": "Boost actuator duty limit (min)",
+   "address": 475182,
+   "rows": 16,
+   "cols": 4
+  },
+  {
+   "name": "Boost target map (eco)",
+   "address": 475854,
+   "rows": 16,
+   "cols": 10
+  },
+  {
+   "name": "Boost actuator duty base map (eco)",
+   "address": 476704,
+   "rows": 16,
+   "cols": 10
+  },
+  {
+   "name": "Boost actuator duty base map (sport)",
+   "address": 477040,
+   "rows": 2,
+   "cols": 2
+  },
+  {
+   "name": "EGR duty base map",
+   "address": 478292,
+   "rows": 8,
+   "cols": 8
+  },
+  {
+   "name": "Rail pressure target map",
+   "address": 479272,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Rail pressure maximum map",
+   "address": 480808,
+   "rows": 16,
+   "cols": 8
+  },
+  {
+   "name": "Injector duration 10 (no pilot)",
+   "address": 482282,
+   "rows": 15,
+   "cols": 32
+  },
+  {
+   "name": "Injector duration 11 (no pilot)",
+   "address": 483344,
+   "rows": 15,
+   "cols": 32
+  },
+  {
+   "name": "Injector duration 12 (no pilot)",
+   "address": 484406,
+   "rows": 15,
+   "cols": 32
+  },
+  {
+   "name": "Injector duration 20 (with pilot)",
+   "address": 485468,
+   "rows": 15,
+   "cols": 32
+  },
+  {
+   "name": "Injector duration 21 (with pilot)",
+   "address": 486530,
+   "rows": 15,
+   "cols": 32
+  },
+  {
+   "name": "Injector duration 22 (with pilot)",
+   "address": 487592,
+   "rows": 15,
+   "cols": 32
+  },
+  {
+   "name": "Pilot injection SOI (relative)",
+   "address": 488570,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Pilot injection quantity",
+   "address": 489846,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Pilot injection quantity maximum",
+   "address": 490586,
+   "rows": 16,
+   "cols": 8
+  },
+  {
+   "name": "Main injection SOI earliest",
+   "address": 490910,
+   "rows": 16,
+   "cols": 8
+  },
+  {
+   "name": "Main injection SOI (with pilot)",
+   "address": 491166,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Main injection SOI (no pilot)",
+   "address": 491678,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Driver wish 1 (low range)",
+   "address": 498796,
+   "rows": 12,
+   "cols": 8
+  },
+  {
+   "name": "Driver wish 2 (lower v_nenn)",
+   "address": 499036,
+   "rows": 12,
+   "cols": 8
+  },
+  {
+   "name": "Driver wish 3 (upper v_nenn)",
+   "address": 499276,
+   "rows": 12,
+   "cols": 8
+  },
+  {
+   "name": "Start quantity base map",
+   "address": 499586,
+   "rows": 8,
+   "cols": 10
+  },
+  {
+   "name": "Smoke limiter (dynamic)",
+   "address": 500518,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Full-load raise by coolant temperature",
+   "address": 501096,
+   "rows": 8,
+   "cols": 8
+  },
+  {
+   "name": "Smoke limiter correction 1 (atmospheric pressure)",
+   "address": 501278,
+   "rows": 11,
+   "cols": 12
+  },
+  {
+   "name": "Smoke limiter correction 2 (air temperature)",
+   "address": 501632,
+   "rows": 11,
+   "cols": 12
+  },
+  {
+   "name": "Torque limiter (pull-away)",
+   "address": 501988,
+   "rows": 19,
+   "cols": 1
+  },
+  {
+   "name": "Torque limiter (raised)",
+   "address": 502074,
+   "rows": 19,
+   "cols": 1
+  },
+  {
+   "name": "Torque limiter (normal)",
+   "address": 502154,
+   "rows": 19,
+   "cols": 1
+  },
+  {
+   "name": "Torque limiter (low range)",
+   "address": 502228,
+   "rows": 16,
+   "cols": 1
+  },
+  {
+   "name": "Turbo protection full-load quantity",
+   "address": 502306,
+   "rows": 10,
+   "cols": 9
+  },
+  {
+   "name": "Smoke limiter",
+   "address": 502558,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Smoke limiter (low range)",
+   "address": 503142,
+   "rows": 16,
+   "cols": 16
+  }
+ ]
+}

@@ -220,7 +220,7 @@ pub fn import_map_definitions(
 ///   47 — Switch MAP/MAF des EDC16 (U1/U31/U34) et identification : un
 ///       EDC15VM sans référence VAG dans le binaire n'est plus pris
 ///       pour un EDC15P (2.5 V6).
-pub const DETECTOR_VERSION: u32 = 50;
+pub const DETECTOR_VERSION: u32 = 51;
 
 /// Version du moteur de détection, pour comparaison avec celle enregistrée
 /// dans un projet.
@@ -599,21 +599,41 @@ fn build_expected_report_edc15p(
 /// règle SOI demande donc ≥1 par codeblock. ⚠ « IQ by MAP limiter » et le
 /// 2e « Start IQ » restent incertains sur la génération mono-SOI (en
 /// attente d'une référence externe VM).
-/// EDC15C4 (BMW DDE 4.0) - skeleton calibrated on one dump. The two
-/// invariants come from the ECU: six injector duration slots (one per
-/// duration map, as on every Bosch EDC15) and one boost target map. The
-/// list grows as families are promoted from hypothesis to calibrated
-/// (docs/PORTING-EDC15C4.md).
+/// EDC15C4 (BMW DDE 4.0). Invariants of the ECU, from the Bosch A2L of the
+/// reference project (P079.VB4) and checked on the three builds of the
+/// corpus: six injector duration slots (three without pilot, three with),
+/// the rail pressure set point, the two main SOI maps and the pilot
+/// quantity of the injection group, one boost target and one actuator base
+/// map (the economy program - the sport twin is unused on every build
+/// seen), three smoke limiters, three driver wish maps, the three
+/// gear-dependent torque limiter curves, one EGR air mass target.
 fn build_expected_report_edc15c4(maps: &[DetectedMap]) -> Option<Vec<ExpectedMapStatus>> {
     let count_prefix = |prefix: &str| -> usize {
         maps.iter()
             .filter(|m| m.name.as_deref().map(|n| n.starts_with(prefix)).unwrap_or(false))
             .count()
     };
-    Some(vec![
-        ExpectedMapStatus { label: "Injector duration 00-05".to_string(), expected: 6, found: count_prefix("Injector duration").min(6) },
-        ExpectedMapStatus { label: "Boost target map".to_string(), expected: 1, found: count_prefix("Boost target map").min(1) },
-    ])
+    let count_exact = |name: &str| -> usize {
+        maps.iter().filter(|m| m.name.as_deref() == Some(name)).count()
+    };
+    let rules: Vec<(&str, usize, usize)> = vec![
+        ("Injector duration 10-12 / 20-22", 6, count_prefix("Injector duration")),
+        ("Rail pressure target map", 1, count_exact("Rail pressure target map")),
+        ("Main injection SOI (with / without pilot)", 2, count_prefix("Main injection SOI (")),
+        ("Pilot injection quantity", 1, count_exact("Pilot injection quantity")),
+        ("Boost target map (eco)", 1, count_exact("Boost target map (eco)")),
+        ("Boost actuator duty base map (eco)", 1, count_exact("Boost actuator duty base map (eco)")),
+        ("Smoke limiter (dynamic / main / low range)", 3, count_prefix("Smoke limiter") - count_prefix("Smoke limiter correction")),
+        ("Driver wish 1-3", 3, count_prefix("Driver wish")),
+        ("Torque limiter (pull-away / raised / normal)", 3, count_prefix("Torque limiter (") - count_exact("Torque limiter (low range)")),
+        ("EGR air mass target map", 1, count_exact("EGR air mass target map")),
+    ];
+    Some(
+        rules
+            .into_iter()
+            .map(|(label, expected, found)| ExpectedMapStatus { label: label.to_string(), expected, found: found.min(expected) })
+            .collect(),
+    )
 }
 
 fn build_expected_report_edc15vm(maps: &[DetectedMap]) -> Option<Vec<ExpectedMapStatus>> {

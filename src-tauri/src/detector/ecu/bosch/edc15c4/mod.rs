@@ -1,97 +1,51 @@
 // Bosch EDC15C4 detector (BMW DDE 4.0 - M57 / M47 common rail, 512 KB).
-// PORTING SKELETON, calibrated on ONE dump - see docs/PORTING-EDC15C4.md.
+// Calibrated against the Bosch A2L of the reference project (P079.VB4,
+// damos 4ZB1379 and 6ZC1179) - see docs/PORTING-EDC15C4.md.
 //
-// What is reusable from the VAG EDC15 detectors and what is not
-// ---------------------------------------------------------------
-// REUSABLE (implemented in layout.rs, family-generic):
-//   - the C167 little-endian u16 decoding;
-//   - the self-describing record format [id][n][axis] [id][m][axis] [data],
-//     the same one the EDC15P/EDC15VM modules walk. The block is read, not
-//     guessed: a record is consumed whole, so a data block can never pass
-//     for a header. No address is hardcoded.
+// How it reads a file
+// -------------------
+// 1. layout.rs locates the signed calibration block (V2.0 signature) and
+//    walks its self-describing records [id][n][axis][id][m][axis][data].
+//    Nothing is guessed: a record is consumed whole, no address is fixed.
+// 2. families.rs names the inline records from their grid, axis value
+//    ranges, data ranges and file-order sequence. The names and factors
+//    come from the A2L; the rules come from the three files of the corpus.
+// 3. group.rs handles the injection block, whose maps are bare data blocks
+//    sharing one cluster of axes: it finds the cluster and reads the maps
+//    at their fixed offsets from it, each checked against a physical
+//    window.
 //
-// NOT REUSABLE (and deliberately not shared with the VAG modules):
-//   - the axis id tables. On this family C016 is an rpm axis on most maps
-//     but also carries 14..23 or 205..1100 on others, so an id names a
-//     STORAGE family, not a physical quantity. Families are recognised by
-//     grid + axis value ranges + data value ranges.
-//   - the VAG pattern list (complete_patterns.rs): the grids, factors and
-//     names are VAG software layouts.
-//   - the v4.1 checksum: the block is signed "V2.0", and the frontend
-//     routes EDC15C4 AWAY from the VAG checksum corrector (see
-//     src/lib/ecu-family.ts). A wrong checksum algorithm silently writes
-//     garbage at fixed addresses, which is the worst outcome of this engine.
+// What is NOT shared with the VAG modules: the axis id tables (an id is a
+// RAM address here, it moves between builds), the VAG pattern list, and
+// the v4.1 checksum - the block is signed "V2.0" and the frontend keeps
+// EDC15C4 away from the VAG checksum corrector (src/lib/ecu-family.ts).
 //
-// Safety contract of this module
-// ------------------------------
-// `detect()` only emits families whose `calibrated()` is true: two families
-// whose physics is unambiguous on the reference dump (the six injector
-// duration maps, the boost target map). Everything else the walk finds is
-// exposed through `inventory()` for bench work, tagged with a hypothesis,
-// and NEVER shown to the user until a reference (damos / WinOLS pack /
-// second dump) confirms it. Per CONTRIBUTING.md: "fewer maps that are right
-// rather than more maps that are almost right".
+// Safety contract
+// ---------------
+// `detect()` refuses any size other than 512 KB and any file without a V2.0
+// block. Families that come in a fixed sequence (six durations, three smoke
+// limiters, three driver wish maps, three torque limiter curves) are only
+// reported when the sequence is complete, and a rule that fires twice for a
+// unique family reports nothing. Per CONTRIBUTING.md: "fewer maps that are
+// right rather than more maps that are almost right".
 
+pub mod families;
+pub mod group;
 pub mod layout;
+pub mod spec;
 
 pub use layout::{parse_records, Axis, Edc15c4Layout, Record};
+pub use spec::MapSpec;
 
-use crate::models::{DataType, DetectedMap, MapCategory, MapDimensions};
+use crate::models::{DataType, DetectedMap, MapDimensions};
 
-// ============================== FAMILIES ==============================
-
-/// Map families of the EDC15C4 calibration block.
-///
-/// `calibrated()` is the gate: a family stays out of `detect()` until its
-/// grid, factors and physical ranges have been confirmed on a real file
-/// against a reference. Flip it with a dump AND a reference in front of you.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Family {
-    /// Injector energising time by rail pressure (rows) and IQ (cols),
-    /// six maps in a row. CALIBRATED: rail axis 0.1 bar (119..1450),
-    /// IQ axis 0.01 mg/st (0..70), data in µs, 0 at IQ 0, monotonic along
-    /// IQ, decreasing with rail pressure at a given IQ.
-    InjectorDuration,
-    /// Boost pressure set point by rpm (rows) and IQ (cols), absolute mbar.
-    /// CALIBRATED: 990..1030 mbar at idle/no load (atmospheric), 2200 mbar
-    /// at full load on the reference 525d (1.2 bar relative).
-    BoostTarget,
-    /// HYPOTHESIS: rpm × IQ map with 85 % at idle falling to 27 % at
-    /// 4600 rpm - the shape of a VNT actuator base duty (0.01 %), but an
-    /// EGR duty has a similar shape. Needs a reference.
-    ActuatorDutyByRpmIq,
-    /// HYPOTHESIS: 16 × 16 rpm × (2000..8500) map with data saturating at
-    /// a per-rpm ceiling (5013 at 650 rpm, 3554 at 4900 rpm): looks like a
-    /// torque request → IQ conversion with a limiter folded in. Two
-    /// identical copies plus a third variant on the reference file.
-    TorqueToIq,
-    /// HYPOTHESIS: 1D curve on a 10-bit ADC axis (0..1023) producing
-    /// tenths of kelvin (2331..4131): NTC sensor linearisation. Correct
-    /// but of no tuning value - not exposed.
-    SensorLinearisation,
-    /// 1D or 2D record the walk found but no rule names. Kept in the
-    /// inventory so the bench can list it.
-    Unknown,
+/// One record of the calibration block with the family it was recognised
+/// as (None = unclassified). Used by the bench and the fixture tests.
+#[derive(Debug, Clone)]
+pub struct InventoryEntry {
+    pub record: Record,
+    pub spec: Option<MapSpec>,
 }
-
-impl Family {
-    pub const fn calibrated(self) -> bool {
-        matches!(self, Family::InjectorDuration | Family::BoostTarget)
-    }
-
-    pub const fn label(self) -> &'static str {
-        match self {
-            Family::InjectorDuration => "Injector duration",
-            Family::BoostTarget => "Boost target map",
-            Family::ActuatorDutyByRpmIq => "Actuator duty by rpm/IQ (hypothesis)",
-            Family::TorqueToIq => "Torque to IQ (hypothesis)",
-            Family::SensorLinearisation => "Sensor linearisation (hypothesis)",
-            Family::Unknown => "Unclassified record",
-        }
-    }
-}
-
-// ============================== DETECTOR ==============================
 
 pub struct EDC15C4Detector {
     tuned: bool,
@@ -108,28 +62,32 @@ impl EDC15C4Detector {
         Self { tuned: false }
     }
 
-    /// Tuned mode widens the data windows (a remapped duration or boost
-    /// map exceeds the stock ceilings) without touching the axis rules.
+    /// Tuned mode widens the data windows (a remapped map exceeds the stock
+    /// ceilings) without touching the axis rules.
     pub fn new_tuned() -> Self {
         Self { tuned: true }
     }
 
-    /// Every record of the calibration block, with the family it was
-    /// recognised as. Empty when the file carries no V2.0 block.
-    pub fn inventory(&self, data: &[u8]) -> Vec<(Record, Family)> {
+    /// Every inline record of the calibration block, classified. Empty
+    /// when the file carries no V2.0 block.
+    pub fn inventory(&self, data: &[u8]) -> Vec<InventoryEntry> {
         let Some(layout) = Edc15c4Layout::detect(data) else {
             return Vec::new();
         };
-        parse_records(data, layout.block_start, layout.block_end)
+        let records = parse_records(data, layout.block_start, layout.block_end);
+        let classified = families::classify(&records, self.tuned);
+        let mut specs: Vec<Option<MapSpec>> = vec![None; records.len()];
+        for c in classified {
+            specs[c.index] = Some(c.spec);
+        }
+        records
             .into_iter()
-            .map(|r| {
-                let f = self.classify(&r);
-                (r, f)
-            })
+            .zip(specs)
+            .map(|(record, spec)| InventoryEntry { record, spec })
             .collect()
     }
 
-    /// Calibrated families only. Never falls back to a VAG detector.
+    /// The maps of the file. Never falls back to a VAG detector.
     pub fn detect(&self, data: &[u8]) -> Vec<DetectedMap> {
         if data.len() != layout::DUMP_SIZE {
             return Vec::new();
@@ -138,230 +96,99 @@ impl EDC15C4Detector {
             return Vec::new();
         };
         let mut maps = Vec::new();
-        let mut duration_index = 0usize;
-        for (rec, family) in self.inventory(data) {
-            if !family.calibrated() {
-                continue;
+
+        for entry in self.inventory(data) {
+            let Some(spec) = entry.spec else { continue };
+            let r = &entry.record;
+            maps.push(self.build(
+                &spec,
+                &layout,
+                r.data_addr,
+                r.rows(),
+                r.cols(),
+                r.first.values_addr,
+                r.second.as_ref().map(|a| a.values_addr),
+            ));
+        }
+
+        if let Some(cluster) = group::find_cluster(data, layout.block_start, layout.block_end) {
+            for g in group::find_group_maps(data, &cluster, layout.block_end, self.tuned) {
+                maps.push(self.build(
+                    &g.def.spec,
+                    &layout,
+                    g.data_addr,
+                    g.def.rows,
+                    g.def.cols,
+                    g.y_axis_addr,
+                    Some(g.x_axis_addr),
+                ));
             }
-            let map = match family {
-                Family::InjectorDuration => {
-                    let m = self.duration_map(&rec, duration_index, &layout);
-                    duration_index += 1;
-                    m
-                }
-                Family::BoostTarget => self.boost_target_map(&rec, &layout),
-                _ => continue,
-            };
-            maps.push(map);
+        } else {
+            log::debug!("EDC15C4: shared-axis cluster not found, injection group maps skipped");
         }
-        // Six durations is the invariant of the family (one per injector
-        // slot, as on every Bosch EDC15). A file with another count is a
-        // file the rules do not understand: report none rather than a
-        // partial set the user would take for complete.
-        let durations = maps.iter().filter(|m| m.subcategory.as_deref() == Some("duration")).count();
-        if durations != 0 && durations != 6 {
-            log::warn!("EDC15C4: {} injector duration maps instead of 6, dropping them", durations);
-            maps.retain(|m| m.subcategory.as_deref() != Some("duration"));
-        }
+
+        maps.sort_by_key(|m| m.address);
         maps
     }
 
-    // ------------------------------------------------------------------
-    // Classification rules. Each rule reads the RECORD (grid, axis values,
-    // data values), never an address and never an id alone.
-    // ------------------------------------------------------------------
-
-    pub fn classify(&self, r: &Record) -> Family {
-        if self.is_injector_duration(r) {
-            return Family::InjectorDuration;
-        }
-        if self.is_boost_target(r) {
-            return Family::BoostTarget;
-        }
-        if self.is_actuator_duty(r) {
-            return Family::ActuatorDutyByRpmIq;
-        }
-        if self.is_torque_to_iq(r) {
-            return Family::TorqueToIq;
-        }
-        if self.is_sensor_linearisation(r) {
-            return Family::SensorLinearisation;
-        }
-        Family::Unknown
-    }
-
-    fn data_ceiling(&self, stock: u16, tuned: u16) -> u16 {
-        if self.tuned { tuned } else { stock }
-    }
-
-    /// rpm-shaped axis: 8..20 points, starts at or below 1100, ends
-    /// between 3500 and 6000 rpm.
-    fn is_rpm_axis(a: &Axis) -> bool {
-        (8..=20).contains(&a.len()) && a.first() <= 1100 && (3500..=6000).contains(&a.last())
-    }
-
-    /// IQ-shaped axis in 0.01 mg/st: starts at 0, ends between 30 and
-    /// 100 mg/st.
-    fn is_iq_axis(a: &Axis) -> bool {
-        a.first() == 0 && (3000..=10_000).contains(&a.last())
-    }
-
-    fn is_injector_duration(&self, r: &Record) -> bool {
-        let Some(iq) = &r.second else { return false };
-        let rail = &r.first;
-        // Rail pressure axis, 0.1 bar: 10..20 points, 100..200 bar first,
-        // 1200..1600 bar last.
-        if !(10..=20).contains(&rail.len())
-            || !(1000..=2000).contains(&rail.first())
-            || !(12_000..=16_000).contains(&rail.last())
-        {
-            return false;
-        }
-        if !(20..=40).contains(&iq.len()) || !Self::is_iq_axis(iq) {
-            return false;
-        }
-        let ceiling = self.data_ceiling(6000, 10_000);
-        if r.max() > ceiling {
-            return false;
-        }
-        // IQ 0 -> 0 µs on every rail row, and non-decreasing along IQ.
-        (0..r.rows()).all(|i| {
-            let row = r.row(i);
-            row[0] == 0 && row.windows(2).all(|w| w[0] <= w[1])
-        })
-    }
-
-    fn is_boost_target(&self, r: &Record) -> bool {
-        let Some(iq) = &r.second else { return false };
-        let rpm = &r.first;
-        if !Self::is_rpm_axis(rpm) || !(6..=16).contains(&iq.len()) || !Self::is_iq_axis(iq) {
-            return false;
-        }
-        let ceiling = self.data_ceiling(3200, 4500);
-        if r.min() < 800 || r.max() > ceiling {
-            return false;
-        }
-        // No load at the lowest rpm = atmospheric pressure (absolute mbar).
-        let idle_no_load = r.row(0)[0];
-        (850..=1150).contains(&idle_no_load)
-    }
-
-    fn is_actuator_duty(&self, r: &Record) -> bool {
-        let Some(iq) = &r.second else { return false };
-        let rpm = &r.first;
-        if !Self::is_rpm_axis(rpm) || !(6..=16).contains(&iq.len()) || !Self::is_iq_axis(iq) {
-            return false;
-        }
-        // Percent in 0.01 %: never above 100 %, high at low rpm, low at
-        // high rpm (vanes close to spool, open at speed).
-        r.max() <= 10_000 && r.row(0)[0] >= 7000 && r.row(r.rows() - 1)[0] <= 4000
-    }
-
-    fn is_torque_to_iq(&self, r: &Record) -> bool {
-        let Some(req) = &r.second else { return false };
-        let rpm = &r.first;
-        if !Self::is_rpm_axis(rpm) || !(12..=20).contains(&req.len()) {
-            return false;
-        }
-        if req.first() < 1000 || req.last() > 12_000 || r.max() > 10_000 {
-            return false;
-        }
-        // Rows rise with the request (more request, more fuel; a few
-        // one-bit dips are tolerated, the reference has 1914 -> 1911) and
-        // the last column of at least half the rows is a plateau (the
-        // limiter folded in).
-        if r.max() == 0 {
-            return false;
-        }
-        let pairs: usize = (0..r.rows()).map(|i| r.row(i).len() - 1).sum();
-        let rising: usize = (0..r.rows())
-            .map(|i| r.row(i).windows(2).filter(|w| w[0] <= w[1]).count())
-            .sum();
-        let rows_ok = rising * 10 >= pairs * 9;
-        let plateaus = (0..r.rows())
-            .filter(|&i| {
-                let row = r.row(i);
-                let c = row.len();
-                row[c - 1] == row[c - 2]
-            })
-            .count();
-        rows_ok && plateaus * 2 >= r.rows()
-    }
-
-    fn is_sensor_linearisation(&self, r: &Record) -> bool {
-        if r.is_2d() {
-            return false;
-        }
-        let adc = &r.first;
-        // 10-bit converter axis producing tenths of kelvin (-50..+140 degC).
-        adc.last() <= 1023
-            && adc.len() >= 4
-            && r.data.iter().all(|&v| (2231..=4131).contains(&v))
-            && r.data.windows(2).all(|w| w[0] >= w[1])
-            && r.data[0] > r.data[r.data.len() - 1]
-    }
-
-    // ------------------------------------------------------------------
-    // DetectedMap builders. rows = first axis (Y), cols = second axis (X).
-    // ------------------------------------------------------------------
-
-    fn base_map(&self, r: &Record, layout: &Edc15c4Layout) -> DetectedMap {
-        let mut m = DetectedMap::new(
-            r.data_addr as u32,
-            r.data_size(),
-            MapDimensions::TwoDimensional { rows: r.rows(), cols: r.cols() },
-            DataType::UInt16,
-        );
+    /// rows = first axis (Y), cols = second axis (X); little-endian u16.
+    #[allow(clippy::too_many_arguments)]
+    fn build(
+        &self,
+        spec: &MapSpec,
+        layout: &Edc15c4Layout,
+        data_addr: usize,
+        rows: usize,
+        cols: usize,
+        y_axis_addr: usize,
+        x_axis_addr: Option<usize>,
+    ) -> DetectedMap {
+        let dims = if cols == 1 {
+            MapDimensions::OneDimensional { length: rows }
+        } else {
+            MapDimensions::TwoDimensional { rows, cols }
+        };
+        let data_type = if spec.signed { DataType::Int16 } else { DataType::UInt16 };
+        let mut m = DetectedMap::new(data_addr as u32, rows * cols * 2, dims, data_type);
+        m.id = format!("edc15c4_{:06X}", data_addr);
+        m.name = Some(spec.name.to_string());
+        m.category = Some(spec.category.display_name().to_string());
+        m.subcategory = Some(spec.subcategory.to_string());
+        m.description = Some(spec.description.to_string());
+        m.unit = Some(spec.unit.to_string());
+        m.correction_factor = Some(spec.z_factor);
+        m.offset = Some(spec.z_offset);
+        m.confidence = spec.confidence;
         m.is_little_endian = Some(true);
-        m.y_axis_address = Some(r.first.values_addr as u32);
-        m.x_axis_address = r.second.as_ref().map(|a| a.values_addr as u32);
         m.codeblock_id = Some(1);
         m.codeblock_start_address = Some(layout.block_start as u32);
         m.codeblock_end_address = Some(layout.block_end as u32);
-        m
-    }
-
-    fn duration_map(&self, r: &Record, index: usize, layout: &Edc15c4Layout) -> DetectedMap {
-        let mut m = self.base_map(r, layout);
-        m.id = format!("edc15c4_dur_{:02}_{:06X}", index, r.data_addr);
-        m.name = Some(format!("Injector duration {:02}", index));
-        m.category = Some(MapCategory::InjectionSystem.display_name().to_string());
-        m.subcategory = Some("duration".to_string());
-        m.unit = Some("µs".to_string());
-        m.correction_factor = Some(1.0);
-        m.offset = Some(0.0);
-        m.y_label = Some("Rail pressure (bar)".to_string());
-        m.y_axis_correction = Some(0.1);
-        m.y_axis_offset = Some(0.0);
-        m.x_label = Some("IQ (mg/st)".to_string());
-        m.x_axis_correction = Some(0.01);
-        m.x_axis_offset = Some(0.0);
-        m.description = Some(
-            "Injector energising time for a requested quantity at a given rail pressure | X: IQ (mg/st) | Y: Rail pressure (bar)".to_string(),
-        );
-        m.confidence = 0.90;
-        m
-    }
-
-    fn boost_target_map(&self, r: &Record, layout: &Edc15c4Layout) -> DetectedMap {
-        let mut m = self.base_map(r, layout);
-        m.id = format!("edc15c4_boost_{:06X}", r.data_addr);
-        m.name = Some("Boost target map".to_string());
-        m.category = Some(MapCategory::TurboBoostPressure.display_name().to_string());
-        m.subcategory = Some("target".to_string());
-        m.unit = Some("mbar".to_string());
-        m.correction_factor = Some(1.0);
-        m.offset = Some(0.0);
-        m.y_label = Some("Engine speed (rpm)".to_string());
-        m.y_axis_correction = Some(1.0);
-        m.y_axis_offset = Some(0.0);
-        m.x_label = Some("IQ (mg/st)".to_string());
-        m.x_axis_correction = Some(0.01);
-        m.x_axis_offset = Some(0.0);
-        m.description = Some(
-            "Absolute boost pressure set point by engine speed and injected quantity | X: IQ (mg/st) | Y: Engine speed (rpm)".to_string(),
-        );
-        m.confidence = 0.85;
+        // A curve has its single axis along the rows; the app reads a 1D
+        // map's axis from x_axis_address, so the row axis goes there.
+        match (cols, x_axis_addr, spec.x) {
+            (1, _, _) => {
+                m.x_axis_address = Some(y_axis_addr as u32);
+                m.x_label = Some(spec.y.label.to_string());
+                m.x_axis_correction = Some(spec.y.factor);
+                m.x_axis_offset = Some(spec.y.offset);
+            }
+            (_, Some(xa), Some(x)) => {
+                m.y_axis_address = Some(y_axis_addr as u32);
+                m.y_label = Some(spec.y.label.to_string());
+                m.y_axis_correction = Some(spec.y.factor);
+                m.y_axis_offset = Some(spec.y.offset);
+                m.x_axis_address = Some(xa as u32);
+                m.x_label = Some(x.label.to_string());
+                m.x_axis_correction = Some(x.factor);
+                m.x_axis_offset = Some(x.offset);
+            }
+            _ => {
+                m.y_axis_address = Some(y_axis_addr as u32);
+                m.y_label = Some(spec.y.label.to_string());
+                m.y_axis_correction = Some(spec.y.factor);
+                m.y_axis_offset = Some(spec.y.offset);
+            }
+        }
         m
     }
 }
@@ -388,6 +215,15 @@ mod tests {
         b
     }
 
+    fn record_1d(id: u16, ax: &[u16], z: &[u16]) -> Vec<u8> {
+        let mut b = Vec::new();
+        put16(&mut b, id);
+        put16(&mut b, ax.len() as u16);
+        ax.iter().for_each(|&v| put16(&mut b, v));
+        z.iter().for_each(|&v| put16(&mut b, v));
+        b
+    }
+
     /// A blank 512 KB dump carrying only the V2.0 block header.
     fn blank_dump() -> Vec<u8> {
         let mut data = vec![0xC3u8; layout::DUMP_SIZE];
@@ -396,14 +232,22 @@ mod tests {
         data
     }
 
+    fn write(data: &mut [u8], off: usize, rec: &[u8]) -> usize {
+        data[off..off + rec.len()].copy_from_slice(rec);
+        off + rec.len()
+    }
+
     const RAIL: [u16; 15] = [1190, 1200, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 11000, 12000, 13500, 14500];
     const IQ32: [u16; 32] = [
         0, 2, 50, 100, 150, 200, 270, 340, 400, 500, 600, 700, 800, 950, 1250, 1500, 1750, 2000, 2250,
         2500, 2750, 3000, 3250, 3500, 3750, 4000, 4250, 4500, 5000, 5500, 6000, 7000,
     ];
+    const RPM16: [u16; 16] = [0, 850, 1008, 1250, 1500, 1750, 2000, 2250, 2500, 2750, 3003, 3507, 4000, 4200, 4408, 4600];
+    const IQ10: [u16; 10] = [0, 1000, 1200, 1500, 2000, 2500, 3500, 4000, 4500, 5000];
+    const RPM19: [u16; 19] = [500, 600, 700, 800, 1000, 1250, 1500, 1750, 2000, 2250, 2500, 2750, 3000, 3250, 3500, 3750, 4000, 4500, 5000];
+    const AIR16: [u16; 16] = [2000, 2500, 3000, 3500, 3750, 4000, 4500, 5000, 5500, 6000, 6200, 6500, 7000, 7500, 8000, 8500];
 
     fn duration_record() -> Vec<u8> {
-        // Row r: 0 at IQ 0, then increasing, lower rows (higher rail) shorter.
         let mut z = Vec::new();
         for r in 0..RAIL.len() {
             for c in 0..IQ32.len() {
@@ -413,9 +257,6 @@ mod tests {
         }
         record_2d(0xC032, &RAIL, 0xD900, &IQ32, &z)
     }
-
-    const RPM16: [u16; 16] = [0, 850, 1008, 1250, 1500, 1750, 2000, 2250, 2500, 2750, 3003, 3507, 4000, 4200, 4408, 4600];
-    const IQ10: [u16; 10] = [0, 1000, 1200, 1500, 2000, 2500, 3500, 4000, 4500, 5000];
 
     fn boost_record() -> Vec<u8> {
         let mut z = Vec::new();
@@ -427,13 +268,27 @@ mod tests {
         record_2d(0xC016, &RPM16, 0xC314, &IQ10, &z)
     }
 
-    #[test]
-    fn uncalibrated_families_are_never_emitted() {
-        let d = EDC15C4Detector::new();
-        for f in [Family::ActuatorDutyByRpmIq, Family::TorqueToIq, Family::SensorLinearisation, Family::Unknown] {
-            assert!(!f.calibrated(), "{:?} must stay a hypothesis", f);
+    fn smoke_record(peak: u16) -> Vec<u8> {
+        let mut z = Vec::new();
+        for r in 0..16 {
+            for c in 0..16 {
+                z.push((1700 + c as u16 * 280 + r as u16 * 10).min(peak));
+            }
         }
+        record_2d(0xC016, &RPM16, 0xC20C, &AIR16, &z)
+    }
+
+    fn limiter_curve(top: u16) -> Vec<u8> {
+        let z: Vec<u16> = (0..19).map(|i| (3400 + i * 100).min(top)).collect();
+        record_1d(0xC016, &RPM19, &z)
+    }
+
+    #[test]
+    fn empty_and_wrong_size_files_report_nothing() {
+        let d = EDC15C4Detector::new();
         assert!(d.detect(&vec![0xC3u8; layout::DUMP_SIZE]).is_empty(), "no block, no maps");
+        assert!(d.detect(&vec![0xC3u8; 0x100000]).is_empty(), "wrong size");
+        assert!(d.detect(&blank_dump()).is_empty(), "block without records");
     }
 
     #[test]
@@ -441,21 +296,24 @@ mod tests {
         let mut data = blank_dump();
         let mut off = 0x71800;
         for _ in 0..6 {
-            let rec = duration_record();
-            data[off..off + rec.len()].copy_from_slice(&rec);
-            off += rec.len();
+            off = write(&mut data, off, &duration_record());
         }
-        let boost = boost_record();
-        data[off..off + boost.len()].copy_from_slice(&boost);
+        write(&mut data, off, &boost_record());
 
         let maps = EDC15C4Detector::new().detect(&data);
-        assert_eq!(maps.len(), 7, "{:?}", maps.iter().map(|m| m.name.clone()).collect::<Vec<_>>());
         let names: Vec<String> = maps.iter().filter_map(|m| m.name.clone()).collect();
-        assert_eq!(names[0], "Injector duration 00");
-        assert_eq!(names[5], "Injector duration 05");
-        assert_eq!(names[6], "Boost target map");
-
-        // Axes: rows = rail (first axis), cols = IQ (second axis).
+        assert_eq!(
+            names,
+            vec![
+                "Injector duration 10 (no pilot)",
+                "Injector duration 11 (no pilot)",
+                "Injector duration 12 (no pilot)",
+                "Injector duration 20 (with pilot)",
+                "Injector duration 21 (with pilot)",
+                "Injector duration 22 (with pilot)",
+                "Boost target map (eco)",
+            ]
+        );
         let d0 = &maps[0];
         assert!(matches!(d0.dimensions, MapDimensions::TwoDimensional { rows: 15, cols: 32 }));
         assert_eq!(d0.y_axis_address, Some(0x71800 + 4));
@@ -464,29 +322,60 @@ mod tests {
         assert_eq!(d0.is_little_endian, Some(true));
         assert_eq!(d0.y_axis_correction, Some(0.1));
         assert_eq!(d0.x_axis_correction, Some(0.01));
+        assert_eq!(d0.x_label.as_deref(), Some("IQ (mm³/st)"));
     }
 
     #[test]
     fn a_partial_duration_set_is_dropped_whole() {
         let mut data = blank_dump();
-        let rec = duration_record();
-        data[0x71800..0x71800 + rec.len()].copy_from_slice(&rec);
-        let maps = EDC15C4Detector::new().detect(&data);
-        assert!(maps.is_empty(), "one duration out of six must not be shown as the duration set");
+        write(&mut data, 0x71800, &duration_record());
+        assert!(EDC15C4Detector::new().detect(&data).is_empty());
     }
 
     #[test]
-    fn a_boost_map_without_atmospheric_baseline_is_refused() {
+    fn smoke_limiters_are_named_by_file_order_and_only_as_a_set_of_three() {
         let mut data = blank_dump();
-        let mut z = Vec::new();
-        for _ in 0..RPM16.len() {
-            for c in 0..IQ10.len() {
-                z.push(1500 + c as u16 * 50);
-            }
-        }
-        let rec = record_2d(0xC016, &RPM16, 0xC314, &IQ10, &z);
-        data[0x71800..0x71800 + rec.len()].copy_from_slice(&rec);
-        assert!(EDC15C4Detector::new().detect(&data).is_empty());
+        let mut off = 0x71800;
+        off = write(&mut data, off, &smoke_record(6289));
+        off = write(&mut data, off, &smoke_record(6289));
+        let two = EDC15C4Detector::new().detect(&data);
+        assert!(two.is_empty(), "two smoke limiters are not a set");
+        write(&mut data, off, &smoke_record(7300));
+        let three = EDC15C4Detector::new().detect(&data);
+        let names: Vec<String> = three.iter().filter_map(|m| m.name.clone()).collect();
+        assert_eq!(names, vec!["Smoke limiter (dynamic)", "Smoke limiter", "Smoke limiter (low range)"]);
+        assert_eq!(three[0].x_label.as_deref(), Some("Airflow (mg/st)"));
+        assert_eq!(three[0].x_axis_correction, Some(0.1));
+    }
+
+    #[test]
+    fn torque_limiter_curves_need_a_run_of_three() {
+        let mut data = blank_dump();
+        let mut off = 0x71800;
+        off = write(&mut data, off, &limiter_curve(5000));
+        // something else in between breaks the run
+        off = write(&mut data, off, &boost_record());
+        off = write(&mut data, off, &limiter_curve(5250));
+        off = write(&mut data, off, &limiter_curve(5700));
+        off = write(&mut data, off, &limiter_curve(5200));
+        let z16: Vec<u16> = (0..16).map(|i| 4000 + i * 100).collect();
+        write(&mut data, off, &record_1d(0xC016, &RPM16, &z16));
+        let maps = EDC15C4Detector::new().detect(&data);
+        let names: Vec<String> = maps.iter().filter_map(|m| m.name.clone()).collect();
+        assert_eq!(
+            names,
+            vec![
+                "Boost target map (eco)",
+                "Torque limiter (pull-away)",
+                "Torque limiter (raised)",
+                "Torque limiter (normal)",
+                "Torque limiter (low range)",
+            ]
+        );
+        let curve = &maps[1];
+        assert!(matches!(curve.dimensions, MapDimensions::OneDimensional { length: 19 }));
+        assert_eq!(curve.x_label.as_deref(), Some("Engine speed (rpm)"));
+        assert!(curve.y_axis_address.is_none());
     }
 
     #[test]
@@ -498,15 +387,28 @@ mod tests {
                 z.push(if r == 0 && c == 0 { 1000 } else { 3600 });
             }
         }
-        let rec = record_2d(0xC016, &RPM16, 0xC314, &IQ10, &z);
-        data[0x71800..0x71800 + rec.len()].copy_from_slice(&rec);
+        write(&mut data, 0x71800, &record_2d(0xC016, &RPM16, 0xC314, &IQ10, &z));
         assert!(EDC15C4Detector::new().detect(&data).is_empty());
         assert_eq!(EDC15C4Detector::new_tuned().detect(&data).len(), 1);
     }
 
     #[test]
-    fn wrong_size_is_refused() {
-        let data = vec![0xC3u8; 0x100000];
-        assert!(EDC15C4Detector::new().detect(&data).is_empty());
+    fn group_maps_come_from_the_shared_axis_cluster() {
+        let mut data = blank_dump();
+        group::tests::write_cluster(&mut data, 0x74F38);
+        // rail target 300..1350 bar (16 x 16)
+        for i in 0..256 {
+            let v: u16 = 3000 + (i as u16) * 40;
+            data[0x74F38 + 0xF0 + 2 * i..0x74F38 + 0xF0 + 2 * i + 2].copy_from_slice(&v.to_le_bytes());
+        }
+        let maps = EDC15C4Detector::new().detect(&data);
+        let rail = maps.iter().find(|m| m.name.as_deref() == Some("Rail pressure target map")).expect("rail");
+        assert_eq!(rail.address, 0x74F38 + 0xF0);
+        assert_eq!(rail.y_axis_address, Some(0x74F38 + 4));
+        assert_eq!(rail.x_axis_address, Some(0x74F38 + 0xA0));
+        assert_eq!(rail.correction_factor, Some(0.1));
+        assert_eq!(rail.unit.as_deref(), Some("bar"));
+        // the untouched C3 blocks around it are not reported
+        assert_eq!(maps.len(), 1);
     }
 }

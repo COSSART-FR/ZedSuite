@@ -1,108 +1,153 @@
-//! Fixture test for the EDC15C4 (BMW DDE 4.0) detector, run against a REAL
-//! dump.
+//! Bench of the EDC15C4 (BMW DDE 4.0) detector against REAL dumps.
 //!
-//! Dumps are never committed, so this test is `#[ignore]`d by default and
-//! reads the file from an environment variable:
+//! Dumps are never committed. What is committed is the expected map list
+//! of each file of the corpus (tests/fixtures/edc15c4/*.json): for the two
+//! damos builds the addresses come straight from the Bosch A2L, for the
+//! 525d read they are the detector output at calibration time, cross
+//! checked record by record against the 4ZB1379 A2L.
 //!
-//!   ZEDSUITE_C4_DUMP=/path/to/original.bin \
+//! The tests are `#[ignore]`d by default and read the files from
+//! environment variables, one per build:
+//!
+//!   ZEDSUITE_C4_DUMP_4ZB1379=/path/4ZB1379_TSW-V2.40_0090799.ori \
+//!   ZEDSUITE_C4_DUMP_6ZC1179=/path/6ZC1179_530D.org \
+//!   ZEDSUITE_C4_DUMP_525D=/path/origine525d.bin \
 //!     cargo test --test edc15c4_dump -- --ignored --nocapture
 //!
-//! The expected addresses are the ones confirmed on the reference file
-//! (BMW E39 525d M57D25, TSW V2.40 090799 1418 C4B/ESB/43, Bosch SW
-//! 1037351632). Another software build will move them: the test is then
-//! expected to fail on the addresses while still finding the same families,
-//! which is the signal wanted when a second file joins the corpus.
+//! A variable left unset skips that file. Each file must come back with
+//! exactly its expected list: same names, same data addresses, same grids,
+//! nothing more, nothing less.
 
-use zedsuite_lib::detector::ecu::bosch::edc15c4::Family;
+use std::collections::BTreeMap;
+
+use serde::Deserialize;
 use zedsuite_lib::detector::ecu::bosch::EDC15C4Detector;
 use zedsuite_lib::detector::{ECUIdentifier, ECUType};
+use zedsuite_lib::models::{DetectedMap, MapDimensions};
 
-fn dump() -> Option<Vec<u8>> {
-    let p = std::env::var("ZEDSUITE_C4_DUMP").ok()?;
-    std::fs::read(p).ok()
+#[derive(Deserialize)]
+struct Fixture {
+    #[allow(dead_code)]
+    source: String,
+    maps: Vec<ExpectedMap>,
 }
 
-#[test]
-#[ignore = "needs ZEDSUITE_C4_DUMP"]
-fn identifies_the_reference_dump_as_edc15c4() {
-    let Some(data) = dump() else {
-        panic!("set ZEDSUITE_C4_DUMP to a 512 KB DDE 4.0 read");
+#[derive(Deserialize)]
+struct ExpectedMap {
+    name: String,
+    address: u32,
+    rows: usize,
+    cols: usize,
+}
+
+fn fixture(tag: &str) -> Fixture {
+    let path = format!("{}/tests/fixtures/edc15c4/{}.json", env!("CARGO_MANIFEST_DIR"), tag);
+    serde_json::from_str(&std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {}", path, e))).expect("fixture json")
+}
+
+fn dump(var: &str) -> Option<Vec<u8>> {
+    let p = std::env::var(var).ok()?;
+    Some(std::fs::read(&p).unwrap_or_else(|e| panic!("{}: {}", p, e)))
+}
+
+fn grid(m: &DetectedMap) -> (usize, usize) {
+    match m.dimensions {
+        MapDimensions::TwoDimensional { rows, cols } => (rows, cols),
+        MapDimensions::OneDimensional { length } => (length, 1),
+        MapDimensions::ThreeDimensional { .. } => (0, 0),
+    }
+}
+
+fn bench(tag: &str, var: &str, expect_sw: Option<&str>) {
+    let Some(data) = dump(var) else {
+        eprintln!("{} not set, {} skipped", var, tag);
+        return;
     };
+    assert_eq!(data.len(), 0x80000, "{}: expected a 512 KB dump", tag);
+
     let id = ECUIdentifier::identify(&data);
-    println!("{:?} {:?} conf {:.2} sw {:?} variant {:?}", id.manufacturer, id.ecu_type, id.confidence, id.software_version, id.variant);
-    assert_eq!(id.ecu_type, ECUType::EDC15C4);
-    assert_eq!(id.software_version.as_deref(), Some("1037351632"));
-}
-
-#[test]
-#[ignore = "needs ZEDSUITE_C4_DUMP"]
-fn finds_every_calibrated_family_on_the_reference_dump() {
-    let Some(data) = dump() else {
-        panic!("set ZEDSUITE_C4_DUMP to a 512 KB DDE 4.0 read");
-    };
-    assert_eq!(data.len(), 0x80000, "expected a 512 KB dump");
+    println!("{}: {:?} {:?} conf {:.2} sw {:?} variant {:?}", tag, id.manufacturer, id.ecu_type, id.confidence, id.software_version, id.variant);
+    assert_eq!(id.ecu_type, ECUType::EDC15C4, "{}: identification", tag);
+    if let Some(sw) = expect_sw {
+        assert_eq!(id.software_version.as_deref(), Some(sw), "{}: software number", tag);
+    }
 
     let maps = EDC15C4Detector::new().detect(&data);
     for m in &maps {
-        println!(
-            "0x{:06X} {:<24} {:?} y@{:06X} x@{:06X} conf {:.2}",
-            m.address,
-            m.name.clone().unwrap_or_default(),
-            m.dimensions,
-            m.y_axis_address.unwrap_or(0),
-            m.x_axis_address.unwrap_or(0),
-            m.confidence
-        );
+        let (r, c) = grid(m);
+        println!("  0x{:06X} {:>2}x{:<2} {}", m.address, r, c, m.name.clone().unwrap_or_default());
     }
 
-    // (name, record address, data address, rows, cols)
-    let expected: &[(&str, u32, usize, usize)] = &[
-        ("Injector duration 00", 0x075BEA, 15, 32),
-        ("Injector duration 01", 0x076010, 15, 32),
-        ("Injector duration 02", 0x076436, 15, 32),
-        ("Injector duration 03", 0x07685C, 15, 32),
-        ("Injector duration 04", 0x076C82, 15, 32),
-        ("Injector duration 05", 0x0770A8, 15, 32),
-        ("Boost target map", 0x0742CE, 16, 10),
-    ];
-    assert_eq!(maps.len(), expected.len(), "unexpected map count");
-    for (name, data_addr, rows, cols) in expected {
-        let m = maps
-            .iter()
-            .find(|m| m.name.as_deref() == Some(name))
-            .unwrap_or_else(|| panic!("{} not found", name));
-        assert_eq!(m.address, *data_addr, "{} data address", name);
-        match m.dimensions {
-            zedsuite_lib::models::MapDimensions::TwoDimensional { rows: r, cols: c } => {
-                assert_eq!((r, c), (*rows, *cols), "{} grid", name);
+    let expected = fixture(tag).maps;
+    let got: BTreeMap<String, &DetectedMap> = maps.iter().map(|m| (m.name.clone().unwrap_or_default(), m)).collect();
+    assert_eq!(got.len(), maps.len(), "{}: duplicate map names", tag);
+
+    let mut errors = Vec::new();
+    for e in &expected {
+        match got.get(&e.name) {
+            None => errors.push(format!("missing: {}", e.name)),
+            Some(m) => {
+                if m.address != e.address {
+                    errors.push(format!("{}: address 0x{:06X}, expected 0x{:06X}", e.name, m.address, e.address));
+                }
+                if grid(m) != (e.rows, e.cols) {
+                    errors.push(format!("{}: grid {:?}, expected {}x{}", e.name, grid(m), e.rows, e.cols));
+                }
             }
-            _ => panic!("{} is not 2D", name),
         }
     }
+    for name in got.keys() {
+        if !expected.iter().any(|e| &e.name == name) {
+            errors.push(format!("unexpected: {}", name));
+        }
+    }
+    assert!(errors.is_empty(), "{}: {} difference(s):\n  {}", tag, errors.len(), errors.join("\n  "));
+    println!("{}: {} maps, all at the expected addresses", tag, maps.len());
 }
 
-/// Prints the whole record inventory of the block with the family each
-/// record was recognised as. This is the bench view used to grow the
-/// family table: run it, compare with a reference, promote a hypothesis.
 #[test]
-#[ignore = "needs ZEDSUITE_C4_DUMP"]
+#[ignore = "needs ZEDSUITE_C4_DUMP_4ZB1379"]
+fn damos_4zb1379_matches_its_a2l() {
+    bench("4ZB1379", "ZEDSUITE_C4_DUMP_4ZB1379", Some("1037351513"));
+}
+
+#[test]
+#[ignore = "needs ZEDSUITE_C4_DUMP_6ZC1179"]
+fn damos_6zc1179_matches_its_a2l() {
+    // Wiped ASCII header on that file: identified by structure, no SW number.
+    bench("6ZC1179", "ZEDSUITE_C4_DUMP_6ZC1179", None);
+}
+
+#[test]
+#[ignore = "needs ZEDSUITE_C4_DUMP_525D"]
+fn e39_525d_read_matches_the_calibration() {
+    bench("525d", "ZEDSUITE_C4_DUMP_525D", Some("1037351632"));
+}
+
+/// Prints every inline record of a file with the family it was recognised
+/// as: the view used to grow the family table against a reference.
+#[test]
+#[ignore = "needs ZEDSUITE_C4_DUMP_525D"]
 fn prints_the_record_inventory() {
-    let Some(data) = dump() else {
-        panic!("set ZEDSUITE_C4_DUMP to a 512 KB DDE 4.0 read");
+    let Some(data) = dump("ZEDSUITE_C4_DUMP_525D") else {
+        panic!("set ZEDSUITE_C4_DUMP_525D to a 512 KB DDE 4.0 read");
     };
     let inv = EDC15C4Detector::new().inventory(&data);
-    let mut counts = std::collections::BTreeMap::new();
-    for (r, f) in &inv {
-        *counts.entry(format!("{:?}", f)).or_insert(0usize) += 1;
+    let mut named = 0;
+    for e in &inv {
+        let r = &e.record;
         let second = r
             .second
             .as_ref()
             .map(|a| format!("{:04X}[{}] {}..{}", a.id, a.len(), a.first(), a.last()))
             .unwrap_or_else(|| "-".to_string());
+        if e.spec.is_some() {
+            named += 1;
+        }
         println!(
-            "0x{:06X} {:<38} first {:04X}[{}] {}..{}  second {:<26} data@0x{:06X} {}x{} min {} max {}",
+            "0x{:06X} {:<48} first {:04X}[{:2}] {:>5}..{:<5} second {:<26} data@0x{:06X} {}x{} min {} max {}",
             r.addr,
-            f.label(),
+            e.spec.map(|s| s.name).unwrap_or("-"),
             r.first.id,
             r.first.len(),
             r.first.first(),
@@ -115,8 +160,6 @@ fn prints_the_record_inventory() {
             r.max()
         );
     }
-    println!("{:?}", counts);
-    assert!(inv.len() > 100, "the reference block carries ~200 records");
-    assert_eq!(counts.get(&format!("{:?}", Family::InjectorDuration)), Some(&6));
-    assert_eq!(counts.get(&format!("{:?}", Family::BoostTarget)), Some(&1));
+    println!("{} records, {} named", inv.len(), named);
+    assert!(inv.len() > 100, "the reference block carries ~210 records");
 }

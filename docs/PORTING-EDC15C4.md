@@ -2,182 +2,223 @@
 
 Support de la famille Bosch EDC15C4 dans le moteur de détection de ZedSuite.
 
-**État : squelette calibré sur UN dump.** Deux familles de maps sont
-confirmées par la physique du fichier (les six durées d'injection, la
-consigne de suralimentation). Le module est routé (`ecu_identifier.rs`,
-`smart_detector.rs`) mais reste désactivé côté app (`ecus.json` :
-`status: skeleton`, `enabled: false` ; `SUPPORTED_ECUS` commenté) tant que
-la table des familles n'a pas été confrontée à une référence.
+**État : bêta, calibré sur deux damos Bosch et trois builds.** 36 maps
+nommées d'après l'A2L du projet Bosch P079.VB4, adresses vérifiées sur les
+trois fichiers du corpus. Le module est activé dans l'app (`ecus.json` :
+`status: beta`, `enabled: true`), l'export mappack reste désactivé. **La
+somme de contrôle du bloc n'est pas connue** : l'app exporte le fichier
+sans correction (statut « unsupported » du checksum, comme sur MJD6), à
+corriger avec un outil externe avant flash.
 
-Fichier de référence : BMW E39 525d (M57D25, 163 ch), lecture 512 Ko,
-en-tête `TSW V2.40 090799 1418 C4B/ESB/43`, logiciel Bosch `1037351632`
-(second numéro `1037351761` dans le bloc de calibration).
+Corpus :
+
+| Fichier | Build | Soft Bosch | Origine |
+|---|---|---|---|
+| lecture E39 525d (M57D25, 163 ch) | `TSW V2.40 090799 1418 C4B/ESB/43` | 1037351632 | lecture flash réelle |
+| `4ZB1379_TSW-V2.40_0090799.ori` | même en-tête TSW | 1037351513 | binaire du damos 4ZB1379 (A2L + .dam, généré 24-08-2000) |
+| `6ZC1179_530D.org` | en-tête effacé | — | binaire du damos 6ZC1179 (A2L), 530d |
+
+Les deux A2L décrivent 4434 / 4470 caractéristiques (115 MAP, 133 CURVE,
+le reste VALUE). 197/203 et 203/205 de leurs MAP/CURVE à axes intégrés
+tombent exactement sur un enregistrement du parseur (`layout.rs`) dans
+leur binaire : l'A2L et le .ori sont bien le même build, et le format
+d'enregistrement est celui qu'on lit.
 
 ---
 
-## Ce qu'on sait du fichier
-
-### Disposition (512 Ko, flash 29F400, C167 little-endian)
+## Disposition du fichier (512 Ko, flash 29F400, C167 little-endian)
 
 ```
 0x00000..0x08000   remplissage C3
-0x08000            en-tête ASCII "TSW V2.40 090799 1418 C4B/ESB/43"
+0x08000            en-tête ASCII "TSW V2.40 090799 1418 C4B/ESB/43" (absent sur un .ori de damos)
 0x08020..0x40000   code programme
 0x40000..0x50000   FF (effacé)
 0x50000..0x60000   code programme
 0x60000..0x70000   FF (effacé)
 0x70000            bloc de calibration signé : 0x70001 = 67 FF FF FF FF FF FF "V2.0"
-0x71800..0x7B200   les maps (enregistrements auto-descriptifs, voir plus bas)
-0x72700..0x737D0   table de codes défaut (enregistrements de 0x38 octets
-                   commençant par 10 0F 00 0F 86 DC), pas des maps
-0x7BFB0            numéro Bosch "1037351761"
+0x71800..0x7B200   les maps (≈210 enregistrements auto-descriptifs + le groupe injection)
+0x72700..0x737D0   table de codes défaut (enregistrements de 0x38 octets), pas des maps
+0x7BFB0            numéro Bosch (second numéro)
 0x7BFFC            somme de contrôle 4 octets, fin du bloc à 0x7C000
-0x7C000..0x7EC00   données non identifiées (pas d'axes auto-descriptifs)
-0x7FEF0            numéro Bosch "1037351632"
-0x7FF00            table de pointeurs AA 05 … 55 AA, puis C3 jusqu'à la fin
+0x7FEF0            numéro Bosch (logiciel)
+0x7FF00            table de pointeurs AA 05 00 00 00 00 55 AA …, puis C3
 ```
 
-C'est exactement la forme du bloc « V4.1 » des EDC15P VAG (signature un
-octet après le début, 0xC000 octets, somme à la fin), une révision plus
-ancienne du format de bloc de code Bosch. **L'algorithme de la somme n'est
-pas connu** : le correcteur VAG v4.1 (`edc15p-checksum.ts`) ne s'applique
-pas et le frontend l'écarte explicitement pour ce type
-(`src/lib/ecu-family.ts`, `isEdc15c4`). Le fichier est rendu intact ; il
-faut un outil externe pour la somme tant que ce point n'est pas résolu.
+Même forme que le bloc « V4.1 » des EDC15P VAG (signature un octet après
+le début, 0xC000 octets, somme à la fin), révision plus ancienne du format
+de bloc Bosch. L'algorithme de la somme reste à identifier ; le correcteur
+VAG v4.1 ne s'applique pas et le frontend l'écarte pour ce type
+(`src/lib/ecu-family.ts`, `isEdc15c4`).
 
-Aucune chaîne `0281…` (numéro matériel Bosch) dans le fichier, aucune
-référence VAG : c'est ce qui laissait le fichier `Unknown` avant ce portage
-et ce qui, ajouté à la signature V2.0 et au jeton `C4x` de l'en-tête TSW,
-l'identifie positivement maintenant.
+## Identification (`ecu_identifier.rs`, `identify_bmw_edc15c4`)
 
-### Les maps sont auto-descriptives
+Toujours : 512 Ko, signature V2.0 présente, aucune signature V4.1, aucune
+référence VAG. Puis :
 
-Même format d'enregistrement que sur EDC15P/EDC15VM :
+* en-tête `TSW V… C4x/…` dans les 64 premiers Ko → confiance 0,88 ;
+* sinon, preuve structurelle pour un fichier à en-tête effacé (les .ori de
+  damos) : V2.0 exactement à 0x70001, marqueur `AA 05 00 00 00 00 55 AA`
+  à 0x7FF00, au moins 100 enregistrements dans le bloc → confiance 0,75.
+
+La passe tourne AVANT la logique EDC15 VAG. Un fichier V2.0 sans en-tête
+ni structure reste `Unknown`.
+
+## Deux formats de maps
+
+### 1. Enregistrements auto-descriptifs (`layout.rs`)
+
+Record layouts A2L `MSA15_KL1xx` / `MSA15_KF3xx` :
 
 ```
-[id u16][n u16][n × u16 valeurs d'axe, strictement croissantes]   premier axe
-[id u16][m u16][m × u16 valeurs d'axe, strictement croissantes]   second axe (2D)
-[n × m × u16 données]                                             ligne = PREMIER axe
+[SRC_ADDR_X u16][n u16][n × u16 axe X, strictement croissant]     premier axe
+[SRC_ADDR_Y u16][m u16][m × u16 axe Y, strictement croissant]     second axe (2D)
+[n × m × u16 données]   FNC_VALUES COLUMN_DIR : ligne = PREMIER axe
 ```
 
-Le second axe est l'indice rapide : `[rail 15][IQ 32][données]` = 15 lignes
-de 32 valeurs. L'app affiche donc `rows = premier axe` (`y_axis_address`)
-et `cols = second axe` (`x_axis_address`), l'ordre fichier est l'ordre
-d'affichage, aucune transposition.
+`SRC_ADDR` est l'**adresse RAM de la grandeur d'entrée** (C016 =
+`dzmNmit`, régime), pas un type physique : 30 des 201 enregistrements
+nommés par les deux A2L ont un id différent d'un build à l'autre. Les
+règles (`families.rs`) lisent donc grille + plages des axes + plages des
+données + ordre dans le fichier, jamais un id seul ni une adresse.
 
-Une courbe 1D est `[id][n][axe][n × données]`.
+L'app affiche `rows = premier axe` (`y_axis_address`) et `cols = second
+axe` (`x_axis_address`), ordre fichier = ordre d'affichage. Une courbe 1D
+porte son axe dans `x_axis_address`.
 
-L'octet haut de l'id est dans 0x80..0xFF (C0/C1/C2/C3, D9..DC, 96, DF sur
-ce fichier). **L'id ne nomme pas la grandeur physique** : `C016` porte un
-régime sur la plupart des maps, mais aussi `14..23` ou `205..1100` sur
-d'autres. Les familles se reconnaissent donc par grille + plages de valeurs
-d'axes + plages de données, jamais par id seul (`edc15c4/mod.rs`,
-`classify`).
+### 2. Maps de groupe du bloc injection (`group.rs`)
 
-Le parcours (`layout.rs`, `parse_records`) consomme chaque enregistrement
-entier avant de reprendre, donc un bloc de données ne peut pas être pris
-pour un en-tête. Il trouve 209 enregistrements sur le fichier de référence
-(`cargo test --test edc15c4_dump prints_the_record_inventory -- --ignored
---nocapture` les liste tous avec la famille reconnue).
+Record layout `MSA15_GKF4` : données nues, axes partagés (`AXIS_PTS`
+`zuwXstzv`, `zuwYstzv*`, `zuwYEakt*`). Les huit axes forment un **cluster**
+de forme fixe [16, 6, 4, 6, 8, 16, 8, 16] et les maps sont à **offset fixe
+du cluster**, identiques sur les trois builds (A2L à l'appui) :
 
----
-
-## Familles calibrées (exposées par `detect()`)
-
-| Famille | Enreg. | Données | Grille | Axes | Données |
-|---|---|---|---|---|---|
-| Injector duration 00 | 0x075B84 | 0x075BEA | 15 × 32 | Y rail 0,1 bar (119..1450), X IQ 0,01 mg/st (0..70) | µs, 0..5000 |
-| Injector duration 01 | 0x075FAA | 0x076010 | 15 × 32 | idem | idem |
-| Injector duration 02 | 0x0763D0 | 0x076436 | 15 × 32 | idem | idem |
-| Injector duration 03 | 0x0767F6 | 0x07685C | 15 × 32 | idem | idem |
-| Injector duration 04 | 0x076C1C | 0x076C82 | 15 × 32 | idem | idem |
-| Injector duration 05 | 0x077042 | 0x0770A8 | 15 × 32 | idem | idem |
-| Boost target map | 0x074292 | 0x0742CE | 16 × 10 | Y régime (0..4600), X IQ 0,01 mg/st (0..50) | mbar absolus, 918..2220 |
-
-Pourquoi on les tient pour sûres, sans référence externe :
-
-* **Durées** : six enregistrements contigus de même grille ; 0 µs à IQ 0
-  sur chaque ligne ; croissantes le long de l'IQ ; à IQ donné, décroissantes
-  quand la pression rail monte ; plafond 5000 sur la ligne 120 bar. À
-  1200 bar et 50 mg/st la valeur est 902 µs, ordre de grandeur d'un
-  injecteur CR de première génération. Six durées = une par emplacement
-  d'injecteur, invariant de tous les EDC15 Bosch. Si le fichier n'en donne
-  pas exactement six, `detect()` n'en montre aucune (une liste partielle
-  serait prise pour complète).
-* **Consigne de boost** : 990..1030 mbar à bas régime sans charge, soit la
-  pression atmosphérique, 2195..2220 mbar à pleine charge entre 2500 et
-  3500 tr/min (1,2 bar relatif, valeur constructeur du 525d 163 ch), retombe
-  à 1860 à 4600. Aucune autre map du bloc n'a cette signature.
-
-L'unité µs des durées est **déduite** (brut × 1, plausible) ; le facteur
-0,01 mg/st de l'axe IQ vient de la plage 0..7000 pour une pleine charge
-attendue vers 50 mg/st. À confirmer sur damos ou pack WinOLS.
-
-Rapport de complétude (`commands.rs`, `build_expected_report_edc15c4`) :
-6 durées, 1 consigne de boost. À étendre à chaque promotion de famille.
-
----
-
-## Hypothèses (dans `inventory()`, jamais dans `detect()`)
-
-| Enreg. | Grille | Axes | Données | Hypothèse |
+| Offset | A2L | Grille | Axes | Map |
 |---|---|---|---|---|
-| 0x0745E4 | 16 × 10 | régime × IQ (0..60) | 8500 → 2705 avec le régime | Duty de base actionneur VNT (0,01 %) — ou EGR, même forme |
-| 0x07A2DE, 0x07AAD6 (copie identique), 0x07AD1E | 16 × 16 | régime × `C20C` 2000..8500 | 1701..6289, plateau par ligne | Conversion demande → IQ avec limiteur intégré (`C20C` = couple 0,1 Nm ?) |
-| 0x071978, 0x071A62 | 1D | CAN 10 bits (46..1023) | 4131 → 2331 | Linéarisation capteur NTC (0,1 K) |
+| +0x000 | zuwXstzv | 16 | régime | axe X partagé (valeurs à +0x004) |
+| +0x050 | zuwYstzv8 | 8 | mm³ M_EMTS | (valeurs à +0x054) |
+| +0x064 | zuwYstzv16 | 16 | mm³ M_EMTS | (valeurs à +0x068) |
+| +0x088 | zuwYEakt8 | 8 | mm³ M_EAKT | (valeurs à +0x08C) |
+| +0x09C | zuwYEakt16 | 16 | mm³ M_EAKT | (valeurs à +0x0A0) |
+| +0x0F0 | zuwPQGWKF | 16×16 | Xstzv × YEakt16 | Rail pressure target map |
+| +0x6F0 | zuwPQmaxKF | 16×8 | Xstzv × YEakt8 | Rail pressure maximum map |
+| +0x2542 | zuwABVGWKF | 16×16 | Xstzv × Ystzv16 | Pilot injection SOI (relative) |
+| +0x2A3E | zuwMEVGWKF | 16×16 | Xstzv × Ystzv16 | Pilot injection quantity |
+| +0x2D22 | zuwMVEmxKF | 16×8 | Xstzv × Ystzv8 | Pilot injection quantity maximum |
+| +0x2E66 | zuwABHmxKF | 16×8 | Xstzv × Ystzv8 | Main injection SOI earliest |
+| +0x2F66 | zuwABHG1KF | 16×16 | Xstzv × Ystzv16 | Main injection SOI (with pilot) |
+| +0x3166 | zuwABHG2KF | 16×16 | Xstzv × Ystzv16 | Main injection SOI (no pilot) |
 
-Autres enregistrements notables, non classés :
+La disposition est rigide jusqu'à +0x39C2 sur les deux A2L (les builds
+divergent de 0x44 octets après). Chaque bloc est quand même validé sur
+une fenêtre physique avant d'être rapporté ; deux clusters dans un
+fichier = groupe refusé.
 
-* **Pression rail** : `C032` 15 points 1190..14500 est l'axe rail des
-  durées ; 0x075840 (8 × 8, régime × `C030` 2000..13500, données
-  1100..4300) et 0x077D5A / 0x078882 (1D sur `C032`, 18..268) tournent
-  autour de la pression rail sans qu'on sache lesquels sont la consigne.
-* **Températures** : `C156` (liquide de refroidissement) et `C15E`
-  (air / carburant) sont en 0,1 K (2731 = 0 °C). Une trentaine de courbes
-  1D à 10000 = 100 % : corrections par température.
-* **Trois courbes régime 19 points** 0x07A8BA / 0x07A910 / 0x07A960
-  (5000, 3900, 3400 … 5250) : allure d'un limiteur d'IQ par régime, trois
-  variantes (sélecteur ?). 0x0737D6 (3800 → 3000) est peut-être le limiteur
-  de couple.
-* **Régime × température** 0x07236C (8 × 8, 450..1755) et 0x07A540
-  (8 × 8, 0..3000) : ralenti par température ? IQ de démarrage ?
-* 0x079C3C / 0x079D2C / 0x079E1C (12 × 8, `C016` 0..4845 × `C1C8`
-  118..10000) : trois variantes d'une même map, 0..6568.
-* `DA..` : axes CAN 10 bits (0..1023), tables de linéarisation capteurs.
+## Unités (COMPU_METHOD de l'A2L)
 
-Rien de tout cela ne doit passer dans `detect()` sans une référence : un
-nom faux est pire qu'une map absente (CONTRIBUTING.md).
+| A2L | Unité | brut → physique | Où |
+|---|---|---|---|
+| N | tr/min | ×1 | axes régime |
+| MM3 | mm³/coup | ×0,01 | axes IQ, données quantité |
+| M_L | mg/coup d'air | ×0,1 | axes débit d'air (limiteurs de fumée), données EGR |
+| RP | hPa rail | ×100 hPa = ×0,1 bar | axe rail des durées, maps de pression rail |
+| P | hPa | ×1 (= mbar) | consigne de boost, axe pression atmosphérique |
+| PROZ / PROZ_S | % | ×0,01 | duty, axe pédale |
+| AD_uS | µs | ×1 | durées d'injection |
+| GradKW | °vilebrequin | ×0,0234375, signé | SOI |
+| T | °C | ×0,1 − 273,14 | axes température |
 
----
+**Les quantités de ce calculateur sont des volumes (mm³/coup), pas des
+masses.** Les libellés le disent ; aucune conversion en mg n'est faite.
+Conséquence : l'estimation de puissance (`power-estimation.ts`), écrite en
+mg/coup, est ~16 % optimiste sur cette famille (densité gazole ≈ 0,835)
+tant qu'une correction n'est pas ajoutée.
 
-## Ce qu'il faut pour sortir du squelette
+## Les 36 maps (banc : 36/36 aux adresses A2L sur 4ZB1379 et 6ZC1179)
 
-1. **Une référence** : damos / A2L DDE 4.0, pack WinOLS M57, ou au minimum
-   un second dump d'un autre logiciel (530d, 320d) pour voir ce qui bouge.
-   Avec elle, promouvoir les hypothèses une par une (`Family::calibrated`).
-2. **La somme de contrôle** du bloc V2.0 : sans elle l'app ne peut pas
-   écrire un fichier flashable. Comparer un original et un fichier corrigé
-   par un outil connu.
-3. **Un corpus** au sens de CONTRIBUTING.md (stock et modifiés, M57 et M47,
-   plusieurs années) et le banc `dump_maps` dessus.
-4. Seulement alors : `enabled: true`, `SUPPORTED_ECUS`, statut `beta`.
+| Nom ZedSuite | A2L | Grille | Y (lignes) × X (colonnes) | Z |
+|---|---|---|---|---|
+| Injector duration 10/11/12 (no pilot) | zuwAD_KF10..12 | 15×32 | rail (bar) × IQ | µs |
+| Injector duration 20/21/22 (with pilot) | zuwAD_KF20..22 | 15×32 | rail × IQ | µs |
+| Rail pressure target map | zuwPQGWKF | 16×16 | régime × IQ | bar |
+| Rail pressure maximum map | zuwPQmaxKF | 16×8 | régime × IQ | bar |
+| Pilot injection quantity | zuwMEVGWKF | 16×16 | régime × IQ | mm³ |
+| Pilot injection quantity maximum | zuwMVEmxKF | 16×8 | régime × IQ | mm³ |
+| Main injection SOI (with pilot) | zuwABHG1KF | 16×16 | régime × IQ | °CA signé |
+| Main injection SOI (no pilot) | zuwABHG2KF | 16×16 | régime × IQ | °CA signé |
+| Main injection SOI earliest | zuwABHmxKF | 16×8 | régime × IQ | °CA signé |
+| Pilot injection SOI (relative) | zuwABVGWKF | 16×16 | régime × IQ | °CA |
+| Boost target map (eco) | ldwSWoekKF | 16×10 | régime × IQ | mbar abs |
+| Boost actuator duty base map (eco) | ldwTVoekKF | 16×10 | régime × IQ | % |
+| Boost actuator duty base map (sport) | ldwTVspoKF | 2×2 | régime × IQ | % |
+| Boost actuator duty limit (max) / (min) | ldwGRmaxKF / ldwGRminKF | 16×4 | régime × IQ | % |
+| Smoke limiter (dynamic) | mrwBRDY_KF | 16×16 | régime × débit d'air | mm³ |
+| Smoke limiter | mrwBRA_KF | 16×16 | régime × débit d'air | mm³ |
+| Smoke limiter (low range) | mrwBRLWRKF | 16×16 | régime × débit d'air | mm³ |
+| Smoke limiter correction 1 / 2 | mrwBRAkAKF / mrwBRAkLKF | 11×12 | régime × débit d'air | mm³ signé |
+| Driver wish 1 (low range) / 2 (lower v_nenn) / 3 (upper v_nenn) | mrwFVLR_KF / FVHU_KF / FVHO_KF | 12×8 | régime × pédale (%) | mm³ |
+| Torque limiter (pull-away) / (raised) / (normal) | mrwADB_KL / BDBH_KL / BDBN_KL | 19 | régime | mm³ |
+| Torque limiter (low range) | mrwBDBLRKL | 16 | régime | mm³ |
+| Turbo protection full-load quantity | mrwLDNB_KF | 10×9 | régime × P atmo (mbar) | mm³ |
+| Full-load raise by coolant temperature | mrwBWT_KF | 8×8 | régime × T eau | mm³ |
+| Start quantity base map | mrwSTMGRKF | 8×10 | régime démarrage × T eau | mm³ |
+| EGR air mass target map | arwMLGRDKF | 12..14×16 | régime (700..2700) × IQ | mg/coup |
+| EGR duty base map | arwDraTVKF | 8×8 | IQ × régime (≤ 3000) | % |
 
-## Garde-fous posés par ce portage
+Le jumeau « sport » de la consigne de boost (ldwSWspoKF, 2×2) vaut 0 sur
+les trois fichiers : programme inutilisé, la règle existe mais ne le
+rapporte pas.
 
-* `identify_bmw_edc15c4` tourne AVANT la logique EDC15 VAG et exige
-  512 Ko + signature V2.0 + en-tête `TSW … C4x` + aucune référence VAG ni
-  signature V4.1. Un fichier V2.0 sans en-tête reste `Unknown`.
-* `smart_detector.rs` route `EDC15C4` vers son propre détecteur, jamais
-  vers `EDC15PDetector`.
-* Frontend : `isVagEdc15` / `isEdc15c4` (`src/lib/ecu-family.ts`) sortent
-  EDC15C4 du correcteur de somme VAG, des DTC EDC15P et du launch control.
-* `detect()` refuse toute taille autre que 512 Ko et tout fichier sans bloc
-  V2.0.
+Ce qui distingue les jumeaux de même grille :
+
+* les trois limiteurs de fumée 16×16 régime × débit d'air : ordre fichier
+  (dynamique, principal, low range), identique sur les trois builds ;
+  n'importe quel autre compte que 3 → aucun rapporté ;
+* la remontée de pleine charge (mrwBWT_KF, 8×8 régime × T eau) : entre le
+  limiteur dynamique et les deux corrections ; la map de frottements
+  (mrwREI_KF, même grille, mêmes axes) est bien plus tôt dans le bloc ;
+* les trois courbes de limitation de couple 19 points : une suite de trois
+  enregistrements consécutifs, puis la courbe 16 points low range ;
+  mrwBEM_KL / mrwANFXUKL / mrwANFAHKL (19 points aussi) ne sont jamais
+  trois d'affilée et ne sont pas rapportées ;
+* le duty EGR (arwDraTVKF, 8×8 IQ × régime) : suivi de la courbe de
+  linéarisation du débitmètre (32 points) ; la map de post-injection
+  (zuwANEGKF, même forme) ne l'est pas.
+
+## Rapport de complétude (`commands.rs`, `build_expected_report_edc15c4`)
+
+Invariants du calculateur : 6 durées, 1 consigne rail, 2 SOI principales,
+1 quantité pilote, 1 consigne de boost (eco), 1 duty de base (eco), 3
+limiteurs de fumée, 3 driver wish, 3 limiteurs de couple, 1 consigne EGR.
+
+## Ce qui reste
+
+1. **La somme de contrôle** du bloc V2.0 (0x7BFFC) et de la zone
+   0x7C000–0x7FFFF : un original + le même corrigé par un outil connu.
+2. Un corpus au sens de CONTRIBUTING.md : des lectures réelles (M57 et
+   M47, plusieurs années, des fichiers modifiés). Les trois fichiers du
+   banc sont tous d'origine.
+3. Familles vues dans l'A2L et pas encore exposées : ralenti par
+   température (mrwLTW_KL), courbes de pression rail min / limite
+   (zuwPQminKL, zuwPQ_mnKL), corrections de SOI et de quantité pilote par
+   température (zuwABH*kKF, zuwMVE*kKF, GKF à +0x344A…), consigne EGR
+   corrigée (arwTLKORKF, arwTWKORKF), limiteur de vitesse (VALUE dans
+   l'A2L, pas une map).
+4. Estimation de puissance : facteur de densité pour les mm³.
+5. Zone 0x7C000–0x7EC00 : données sans axes auto-descriptifs, non
+   explorée.
 
 ## Tests
 
-* `cargo test edc15c4` : parseur (synthétique), règles de classification,
-  identification positive et négative.
-* `ZEDSUITE_C4_DUMP=… cargo test --test edc15c4_dump -- --ignored
-  --nocapture` : identification, adresses attendues et inventaire sur le
-  dump de référence (jamais commité).
+* `cargo test edc15c4` : parseur, cluster, règles de classification sur
+  blocs synthétiques, identification positive et négative (VAG V4.1,
+  fichier sans en-tête, V2.0 seul).
+* Banc sur les vrais fichiers, listes attendues dans
+  `src-tauri/tests/fixtures/edc15c4/` (adresses A2L pour les deux damos) :
+
+  ```
+  ZEDSUITE_C4_DUMP_4ZB1379=… ZEDSUITE_C4_DUMP_6ZC1179=… ZEDSUITE_C4_DUMP_525D=… \
+    cargo test --test edc15c4_dump -- --ignored --nocapture
+  ```
+
+  `prints_the_record_inventory` liste chaque enregistrement avec la
+  famille reconnue : c'est la vue pour promouvoir une nouvelle famille.

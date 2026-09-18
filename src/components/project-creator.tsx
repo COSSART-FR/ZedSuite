@@ -97,7 +97,7 @@ export function ProjectCreator({ onProjectCreated }: ProjectCreatorProps) {
   /** Marque du projet WinOLS ramenée à une entrée de la liste, sinon rien */
   const brandFromOls = (make: string): string => {
     const m = make.trim().toLowerCase();
-    return ["Audi", "Seat", "Skoda", "Volkswagen"].find((b) => b.toLowerCase() === m) || "";
+    return ["Audi", "BMW", "Seat", "Skoda", "Volkswagen"].find((b) => b.toLowerCase() === m) || "";
   };
 
   // Form state
@@ -849,6 +849,7 @@ export function ProjectCreator({ onProjectCreated }: ProjectCreatorProps) {
                   options={[
                     { value: "", label: t.upload?.select || "Select..." },
                     { value: "Audi", label: "Audi" },
+                    { value: "BMW", label: "BMW" },
                     { value: "Seat", label: "Seat" },
                     { value: "Skoda", label: "Skoda" },
                     { value: "Volkswagen", label: "Volkswagen" },
