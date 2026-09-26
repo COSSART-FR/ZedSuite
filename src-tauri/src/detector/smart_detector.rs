@@ -1,6 +1,6 @@
 use crate::models::DetectedMap;
 use crate::detector::ecu_identifier::{ECUIdentifier, ECUIdentification, ECUType};
-use crate::detector::ecu::bosch::{EDC15C4Detector, EDC15PDetector, EDC15VMDetector, EDC16U1Detector, EDC16U31Detector, EDC16U34Detector};
+use crate::detector::ecu::bosch::{EDC15C4Detector, EDC16C31Detector, EDC15PDetector, EDC15VMDetector, EDC16U1Detector, EDC16U31Detector, EDC16U34Detector};
 use crate::detector::ecu::bosch::edc16u34::EDC16Variant;
 use crate::detector::ecu::bosch::edc16u31::EDC16Variant as EDC16U31Variant;
 
@@ -58,6 +58,13 @@ impl SmartDetector {
             ECUType::EDC15C4 => {
                 log::debug!("Using EDC15C4 skeleton detector");
                 let detector = if tuned_mode { EDC15C4Detector::new_tuned() } else { EDC15C4Detector::new() };
+                detector.detect(data)
+            }
+            // EDC16C31 (BMW DDE) - self-describing Kf/Kl blocks, calibrated
+            // families only. Never routed to a VAG EDC16 detector.
+            ECUType::EDC16C31 => {
+                log::debug!("Using EDC16C31 detector");
+                let detector = if tuned_mode { EDC16C31Detector::new_tuned() } else { EDC16C31Detector::new() };
                 detector.detect(data)
             }
             // EDC15P family - route to EDC15P detector

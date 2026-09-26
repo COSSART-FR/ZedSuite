@@ -61,6 +61,7 @@ pub enum ECUType {
     EDC16U31,    // VAG 1.9/2.0/2.5 TDI PD - MPC563 - 512KB/1MB
     EDC16U34,    // VAG 1.9/2.0 TDI transversal - MPC562 - 2MB
     EDC16U,      // VAG generic (fallback)
+    EDC16C31,    // BMW DDE (M47TU / M57TU) - MPC5xx, 1MB read mapped at 0x800000
     EDC16C,      // PSA
     EDC16CP,     // PSA newer
 
@@ -145,6 +146,15 @@ impl ECUIdentifier {
         // to a detector calibrated on VAG layouts (and to the VAG checksum).
         if let Some(id) = Self::identify_bmw_edc15c4(data) {
             log::debug!("Identified as BMW EDC15C4: {:?}", id.variant);
+            return id;
+        }
+
+        // 0.6 BMW EDC16C31 gate. MUST run before the VAG EDC16 logic: a 1MB
+        // BMW read carries the 1037 SW number and EDC16 strings, and the
+        // heuristics below would call it EDC16U1 and hand it to a detector
+        // calibrated on VAG layouts.
+        if let Some(id) = Self::identify_bmw_edc16c31(data) {
+            log::debug!("Identified as BMW EDC16C31: {:?}", id.variant);
             return id;
         }
 
@@ -1278,6 +1288,43 @@ impl ECUIdentifier {
         })
     }
 
+    /// Positive identification of a Bosch EDC16C31 (BMW DDE).
+    ///
+    /// All required:
+    ///   A. exactly 1 MB;
+    ///   B. the Bosch family string `/EDC16C31/` (`,99/1/EDC16C31/999/...`
+    ///      at 0xFE639 on the reference read);
+    ///   C. a Bosch EDC16 checksum descriptor (`FA DE CA FE CA FE AF FE`),
+    ///      read with the 0x800000 base of a 1MB read, whose region contains
+    ///      that family string: the string belongs to the calibration, not
+    ///      to a stray copy. The region's sum is NOT required to be valid - a
+    ///      tuned file is often saved before its checksum is corrected;
+    ///   D. no VAG part number anywhere (veto).
+    ///
+    /// The software number is the last 10-digit "1037......" string of the
+    /// file (the calibration copy, 0xE0254 on the reference read).
+    fn identify_bmw_edc16c31(data: &[u8]) -> Option<ECUIdentification> {
+        use crate::detector::ecu::bosch::edc16c31::layout as c31;
+        if data.len() != c31::DUMP_SIZE {
+            return None;
+        }
+        for vag in [&b"038906"[..], b"03G906", b"070906", b"045906", b"028906"] {
+            if Self::contains_sequence(data, vag) {
+                return None;
+            }
+        }
+        c31::calibration_region(data)?;
+        Some(ECUIdentification {
+            manufacturer: ECUManufacturer::Bosch,
+            ecu_type: ECUType::EDC16C31,
+            variant: Some("BMW DDE (EDC16C31)".to_string()),
+            software_version: Self::extract_last_bosch_1037_number(data),
+            hardware_version: None,
+            part_number: None,
+            confidence: 0.85,
+        })
+    }
+
     /// The ASCII "TSW V..." build header of a Bosch EDC15 (first 64 KB),
     /// up to the first non-printable byte. Example on a DDE 4.0:
     /// `TSW V2.40 090799 1418 C4B/ESB/43`.
@@ -1898,6 +1945,35 @@ mod tests {
         let id = ECUIdentifier::identify(&data);
         assert_eq!(id.ecu_type, ECUType::EDC15C4, "got {:?}", id.ecu_type);
         assert!(id.confidence < 0.8 && id.confidence > 0.7);
+    }
+
+    /// EDC16C31 (BMW DDE): family string inside a checksum region read at
+    /// the 0x800000 base => EDC16C31, never a VAG EDC16.
+    #[test]
+    fn test_bmw_edc16c31_is_identified_and_not_edc16u1() {
+        let mut data = crate::detector::ecu::bosch::edc16c31::tests::blank_dump();
+        data[0x8270..0x8270 + 18].copy_from_slice(b"10373618581974842A");
+        data[0xE0254..0xE0254 + 18].copy_from_slice(b"10373618581974842A");
+        let id = ECUIdentifier::identify(&data);
+        assert_eq!(id.ecu_type, ECUType::EDC16C31, "got {:?}", id.ecu_type);
+        assert_eq!(id.software_version.as_deref(), Some("1037361858"));
+    }
+
+    /// The family string alone (no checksum region around it) is not enough,
+    /// nor is the right structure with a VAG part number in the file.
+    #[test]
+    fn test_edc16c31_needs_the_region_and_no_vag_part() {
+        let mut bare = vec![0xFFu8; 1_048_576];
+        bare[0xFE639..0xFE639 + 16].copy_from_slice(b",99/1/EDC16C31/9");
+        assert_ne!(ECUIdentifier::identify(&bare).ecu_type, ECUType::EDC16C31);
+
+        let mut vag = crate::detector::ecu::bosch::edc16c31::tests::blank_dump();
+        vag[0x9000..0x9009].copy_from_slice(b"038906019");
+        assert_ne!(ECUIdentifier::identify(&vag).ecu_type, ECUType::EDC16C31);
+
+        let mut two_mb = vec![0xFFu8; 2_097_152];
+        two_mb[..1_048_576].copy_from_slice(&crate::detector::ecu::bosch::edc16c31::tests::blank_dump());
+        assert_ne!(ECUIdentifier::identify(&two_mb).ecu_type, ECUType::EDC16C31);
     }
 
     #[test]

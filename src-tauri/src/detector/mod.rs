@@ -35,6 +35,7 @@ impl MapDetector {
             "EDC15M" => Some(ECUType::EDC15M),
             "EDC15C" => Some(ECUType::EDC15C),
             "EDC15C4" => Some(ECUType::EDC15C4),
+            "EDC16C31" => Some(ECUType::EDC16C31),
             _ => None,
         }
     }

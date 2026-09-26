@@ -220,7 +220,8 @@ pub fn import_map_definitions(
 ///   47 — Switch MAP/MAF des EDC16 (U1/U31/U34) et identification : un
 ///       EDC15VM sans référence VAG dans le binaire n'est plus pris
 ///       pour un EDC15P (2.5 V6).
-pub const DETECTOR_VERSION: u32 = 52;
+///   53 — EDC16C31 (BMW DDE) : famille ajoutée (branche edc16c31-calibration).
+pub const DETECTOR_VERSION: u32 = 53;
 
 /// Version du moteur de détection, pour comparaison avec celle enregistrée
 /// dans un projet.
@@ -292,6 +293,11 @@ fn build_expected_report(
     // VAG EDC15 and must never be scored against the VAG rules.
     if ecu == "EDC15C4" {
         return build_expected_report_edc15c4(maps);
+    }
+    // EDC16C31 (BMW DDE) before the EDC16 substring checks: its maps are not
+    // the VAG ones.
+    if ecu == "EDC16C31" {
+        return build_expected_report_edc16c31(maps);
     }
     if ecu.contains("EDC15P") {
         return build_expected_report_edc15p(maps, data);
@@ -627,6 +633,41 @@ fn build_expected_report_edc15c4(maps: &[DetectedMap]) -> Option<Vec<ExpectedMap
         ("Driver wish 1-3", 3, count_prefix("Driver wish")),
         ("Torque limiter (pull-away / raised / normal)", 3, count_prefix("Torque limiter (") - count_exact("Torque limiter (low range)")),
         ("EGR air mass target map", 1, count_exact("EGR air mass target map")),
+    ];
+    Some(
+        rules
+            .into_iter()
+            .map(|(label, expected, found)| ExpectedMapStatus { label: label.to_string(), expected, found: found.min(expected) })
+            .collect(),
+    )
+}
+
+/// EDC16C31 (BMW DDE). The sets the detector reports as a whole, from the
+/// one software of the corpus (E46 320d, SW 1037361858): two driver wish
+/// maps, three torque-to-IQ maps, the main torque limiter and the set of
+/// five limiter curves, five main SOI maps, six injector durations, three
+/// boost targets, the atmospheric boost limiter, two rail targets. A
+/// second software will tell which of these counts belong to the ECU and
+/// which to this calibration (docs/PORTING-EDC16C31.md).
+fn build_expected_report_edc16c31(maps: &[DetectedMap]) -> Option<Vec<ExpectedMapStatus>> {
+    let count_prefix = |prefix: &str| -> usize {
+        maps.iter()
+            .filter(|m| m.name.as_deref().map(|n| n.starts_with(prefix)).unwrap_or(false))
+            .count()
+    };
+    let count_exact = |name: &str| -> usize {
+        maps.iter().filter(|m| m.name.as_deref() == Some(name)).count()
+    };
+    let rules: Vec<(&str, usize, usize)> = vec![
+        ("Driver wish 1-2", 2, count_prefix("Driver wish")),
+        ("Torque to IQ 1-3", 3, count_prefix("Torque to IQ")),
+        ("Torque limiter", 1, count_exact("Torque limiter")),
+        ("Torque limiter 1-5", 5, count_prefix("Torque limiter ")),
+        ("Main injection SOI 1-5", 5, count_prefix("Main injection SOI")),
+        ("Injector duration 1-6", 6, count_prefix("Injector duration")),
+        ("Boost target map 1-3", 3, count_prefix("Boost target map")),
+        ("Boost limiter (atmospheric pressure)", 1, count_exact("Boost limiter (atmospheric pressure)")),
+        ("Rail pressure target map 1-2", 2, count_prefix("Rail pressure target map")),
     ];
     Some(
         rules

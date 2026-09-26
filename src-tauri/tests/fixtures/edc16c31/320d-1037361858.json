@@ -1,0 +1,221 @@
+{
+ "source": "E46 320d 150 hp read (M47TU, Bosch SW 1037361858): detector output at calibration time; every data address cross-checked against a public map list of the same software (ecuedit.com, 'BMW e46 320d 150hp Maps')",
+ "maps": [
+  {
+   "name": "Driver wish 1",
+   "address": 919156,
+   "rows": 16,
+   "cols": 10
+  },
+  {
+   "name": "Driver wish 2",
+   "address": 919736,
+   "rows": 16,
+   "cols": 10
+  },
+  {
+   "name": "Smoke limiter (boost pressure)",
+   "address": 922542,
+   "rows": 12,
+   "cols": 16
+  },
+  {
+   "name": "Torque limiter",
+   "address": 943834,
+   "rows": 21,
+   "cols": 1
+  },
+  {
+   "name": "Torque limiter 1",
+   "address": 945602,
+   "rows": 21,
+   "cols": 1
+  },
+  {
+   "name": "Torque limiter 2",
+   "address": 945688,
+   "rows": 21,
+   "cols": 1
+  },
+  {
+   "name": "Torque limiter 3",
+   "address": 945770,
+   "rows": 19,
+   "cols": 1
+  },
+  {
+   "name": "Torque limiter 4",
+   "address": 945860,
+   "rows": 21,
+   "cols": 1
+  },
+  {
+   "name": "Torque limiter 5",
+   "address": 945946,
+   "rows": 21,
+   "cols": 1
+  },
+  {
+   "name": "Torque to IQ 1",
+   "address": 950506,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Torque to IQ 2",
+   "address": 951086,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Torque to IQ 3",
+   "address": 951666,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Main injection SOI 1",
+   "address": 960524,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Main injection SOI 2",
+   "address": 961104,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Main injection SOI 3",
+   "address": 961684,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Main injection SOI 4",
+   "address": 962264,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Main injection SOI 5",
+   "address": 962844,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Injector duration 1",
+   "address": 1004388,
+   "rows": 16,
+   "cols": 32
+  },
+  {
+   "name": "Injector duration 2",
+   "address": 1005512,
+   "rows": 16,
+   "cols": 32
+  },
+  {
+   "name": "Injector duration 3",
+   "address": 1006636,
+   "rows": 16,
+   "cols": 32
+  },
+  {
+   "name": "Injector duration 4",
+   "address": 1007760,
+   "rows": 16,
+   "cols": 32
+  },
+  {
+   "name": "Injector duration 5",
+   "address": 1008884,
+   "rows": 16,
+   "cols": 32
+  },
+  {
+   "name": "Injector duration 6",
+   "address": 1010008,
+   "rows": 16,
+   "cols": 32
+  },
+  {
+   "name": "Boost actuator duty map 1",
+   "address": 1015620,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Boost actuator duty map 2",
+   "address": 1016952,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Boost actuator duty map 3",
+   "address": 1017532,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Boost actuator duty map 4",
+   "address": 1018112,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Boost target map 1",
+   "address": 1020820,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Boost target map 2",
+   "address": 1021400,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Boost target map 3",
+   "address": 1021980,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Boost limiter (atmospheric pressure)",
+   "address": 1022536,
+   "rows": 10,
+   "cols": 10
+  },
+  {
+   "name": "Boost actuator duty map 5",
+   "address": 1024988,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Rail pressure limiter 1",
+   "address": 1031382,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Rail pressure limiter 2",
+   "address": 1034074,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Rail pressure target map 1",
+   "address": 1034704,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Rail pressure target map 2",
+   "address": 1035876,
+   "rows": 16,
+   "cols": 16
+  }
+ ]
+}
