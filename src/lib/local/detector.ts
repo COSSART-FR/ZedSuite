@@ -36,6 +36,7 @@ export const SUPPORTED_ECUS = new Set([
   "EDC16U31",
   "EDC16U34",
   "EDC15C4", // BMW DDE 4.0 - beta, no checksum correction yet (docs/PORTING-EDC15C4.md)
+  "EDC16C31", // BMW DDE (E46 320d) - beta, one software (docs/PORTING-EDC16C31.md)
 ]);
 
 export async function identifyEcu(

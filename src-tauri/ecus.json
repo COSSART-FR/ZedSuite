@@ -192,5 +192,32 @@
     ],
     "mappack_export_enabled": false,
     "mappack_price": 0
+  },
+  {
+    "id": "edc16c31",
+    "name": "EDC16C31",
+    "manufacturer": "Bosch",
+    "family": "EDC16",
+    "processor": "MPC5xx",
+    "endianness": "Big-Endian",
+    "file_sizes": [
+      "1MB"
+    ],
+    "vehicles": "BMW DDE - calibrated on E46 320d 150 hp (M47TU, SW 1037361858)",
+    "detection_method": "Self-describing Kf/Kl blocks in the checksummed calibration region, calibrated on one software (3 files)",
+    "status": "beta",
+    "enabled": true,
+    "map_categories": [
+      "Injection system",
+      "Start of injection SOI",
+      "Turbo boost pressure",
+      "Turbo boost pressure control",
+      "Smoke limitation",
+      "Engine torque request",
+      "Engine torque limiters",
+      "Fuel quantity"
+    ],
+    "mappack_export_enabled": false,
+    "mappack_price": 0
   }
 ]

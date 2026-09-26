@@ -5,6 +5,7 @@
  * Currently supported:
  * - EDC15P / EDC15V / EDC15VM / EDC15M / EDC15C (Bosch VAG TDI, algorithme v4.1)
  * - EDC16U1 / EDC16U31 / EDC16U34 (Bosch VAG)
+ * - EDC16C31 (Bosch BMW DDE, région de calibration uniquement)
  */
 
 export { correctEDC15PChecksum, verifyEDC15PChecksum, ChecksumResult } from './edc15p-checksum';
@@ -16,10 +17,17 @@ export {
   findEdc16Regions,
 } from './edc16-checksum';
 export type { Edc16Region, Edc16RegionStatus } from './edc16-checksum';
+export {
+  correctEDC16C31Checksum,
+  verifyEDC16C31Checksum,
+  analyzeEDC16C31Checksum,
+  findEdc16c31Regions,
+} from './edc16c31-checksum';
 
 import { correctEDC15PChecksum } from './edc15p-checksum';
 import { correctEDC16Checksum } from './edc16-checksum';
-import { isEdc15c4 } from '../../../ecu-family';
+import { correctEDC16C31Checksum } from './edc16c31-checksum';
+import { isEdc15c4, isEdc16c31 } from '../../../ecu-family';
 
 /**
  * Correct checksums based on ECU type
@@ -42,6 +50,13 @@ export function correctChecksumByEcuType(
   // adresses VAG fixes) : pas de correction, le fichier est rendu intact.
   if (isEdc15c4(ecuTypeUpper)) {
     return null;
+  }
+
+  // EDC16C31 (BMW DDE) : même somme que l'EDC16 VAG, mais base mémoire
+  // fixe (0x800000) et descripteur hors de la position VAG. Avant le test
+  // « EDC16 » générique, qui ne trouverait aucune région.
+  if (isEdc16c31(ecuTypeUpper)) {
+    return correctEDC16C31Checksum(fileData);
   }
 
   // Famille EDC15 — EDC15P, EDC15V, EDC15VM, EDC15M et EDC15C partagent

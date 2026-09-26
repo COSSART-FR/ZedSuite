@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect } from "react";
 import { X, Search, AlertTriangle, Check, ChevronRight, Power, PowerOff, Cpu, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getModalGlassStyle } from "@/lib/modal-glass";
-import { isVagEdc15 } from "@/lib/ecu-family";
+import { isEdc16c31, isVagEdc15 } from "@/lib/ecu-family";
 import {
   detectEDC15PDTCs,
   detectEDC16DTCs,
@@ -71,6 +71,17 @@ export function DTCModal({
 
         if (isVagEdc15(ecuFamily)) {
           result = detectEDC15PDTCs(dataArray, ecuFamily.includes('VM') ? 'EDC15VM' : 'EDC15P');
+        } else if (isEdc16c31(ecuFamily)) {
+          // BMW DDE : les tables de contrôle DTC ne sont pas celles des
+          // EDC16 VAG. Pas de détection plutôt qu'une écriture au mauvais
+          // endroit.
+          result = {
+            success: false,
+            ecuType: ecuType || 'EDC16C31',
+            codeblocks: [],
+            dtcs: [],
+            errors: ['DTC detection not yet implemented for EDC16C31 (BMW DDE)'],
+          };
         } else if (ecuFamily.includes('EDC16')) {
           result = detectEDC16DTCs(dataArray);
         } else {

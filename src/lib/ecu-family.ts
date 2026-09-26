@@ -16,6 +16,11 @@ export function isEdc15c4(ecuType: string | undefined): boolean {
   return (ecuType ?? "").toUpperCase() === "EDC15C4";
 }
 
+/** Bosch EDC16C31 - BMW DDE (M47TU / M57TU), 1 MB reads mapped at 0x800000. */
+export function isEdc16c31(ecuType: string | undefined): boolean {
+  return (ecuType ?? "").toUpperCase() === "EDC16C31";
+}
+
 /**
  * VAG EDC15 family (EDC15P / EDC15V / EDC15VM / EDC15M / EDC15C): the
  * families that share the Bosch VAG TDI v4.1 checksum, DTC tables and
