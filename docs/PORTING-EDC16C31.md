@@ -248,6 +248,23 @@ seul mot, le SVRL à `0xE6D5E` : 5250 → 4300 tr/min.
 
 ---
 
+## Solutions (bouton « Solutions » de l'éditeur)
+
+Deux solutions, rejeu à l'octet près du fichier « stage1-egroff » qui roule
+depuis plus d'un an sur la 320d du corpus (`src/lib/ecu/solutions/edc16c31-e46.ts`) :
+
+* **Stage 1 (E46 320d 150 ch)** : 190 plages, 3844 octets — limiteurs,
+  durations, avance, boost, SVBL, rail. Voir le tableau plus haut.
+* **EGR OFF** : 5 plages, 133 octets — les deux seuils de coupure EGR et les
+  deux courbes posées entre eux mis à 0, et un octet de la table des classes
+  de défauts (`0xE5159`, 0x0B → 0x00, probablement le défaut EGR).
+
+Les deux sont indépendantes. Elles n'agissent que sur le SW `1037361858`
+(numéro lu à `0xE0254`) et exigent les octets d'origine à chaque plage : sur
+un autre soft ou un fichier déjà modifié, elles ne font rien. Appliquées
+toutes les deux sur l'origine, elles redonnent le fichier stage1-egroff à
+l'octet près ; l'éditeur corrige ensuite le checksum.
+
 ## Ce qu'il reste à faire
 
 1. **Plus de logiciels.** Deux softs de la même génération passent ; la

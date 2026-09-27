@@ -5,7 +5,7 @@
 // affichée comme telle et ne peut pas être ré-appliquée.
 
 import { useState, useMemo } from "react";
-import { X, Zap, Shield, Cpu, Check, ChevronRight } from "lucide-react";
+import { X, Zap, Shield, Cpu, Check, ChevronRight, Wind } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   getSolutionsForECU,
@@ -37,15 +37,18 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   zap: Zap,
   shield: Shield,
   cpu: Cpu,
+  wind: Wind,
 };
 
 const categoryIconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   performance: Zap,
+  emissions: Wind,
   other: Cpu,
 };
 
 const categoryColorMap: Record<string, string> = {
   performance: "from-orange-500 to-red-600",
+  emissions: "from-emerald-500 to-teal-600",
   other: "from-purple-500 to-pink-600",
 };
 

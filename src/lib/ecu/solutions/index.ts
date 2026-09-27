@@ -1,8 +1,10 @@
 /**
  * Module Solutions — corrections applicables au binaire.
  *
- * Seule solution disponible : l'activation du Launch Control sur EDC15P et
- * EDC15VM. La cartographie 25×14 existe déjà dans le fichier d'origine mais
+ * Launch Control sur EDC15P et EDC15VM ; Stage 1 et EGR OFF sur EDC16C31
+ * (E46 320d, ./edc16c31-e46.ts).
+ *
+ * Launch Control : La cartographie 25×14 existe déjà dans le fichier d'origine mais
  * son axe de vitesse véhicule est neutralisé ; la solution le réécrit, ce qui
  * rend la carte utilisable (le détecteur Rust ne l'expose que dans ce cas).
  *
@@ -10,7 +12,8 @@
  * jokers, puis écriture des paliers 0, 20, 40 … 260 km/h.
  */
 
-import { isVagEdc15 } from '../../ecu-family';
+import { isEdc16c31, isVagEdc15 } from '../../ecu-family';
+import { edc16c31E46EgrOff, edc16c31E46Stage1 } from './edc16c31-e46';
 
 export interface BinaryPatch {
   address: number; // Adresse absolue dans le fichier
@@ -221,6 +224,7 @@ export const launchControl: SolutionImplementation = {
 
 const SOLUTION_CATEGORIES: SolutionCategory[] = [
   { id: 'performance', name: 'Performance', description: 'Solutions de performance' },
+  { id: 'emissions', name: 'Dépollution', description: 'Systèmes de dépollution' },
 ];
 
 const EDC15_SOLUTIONS: Solution[] = [
@@ -234,14 +238,40 @@ const EDC15_SOLUTIONS: Solution[] = [
   },
 ];
 
+/** EDC16C31 : rejeu de modifications éprouvées, SW 1037361858 seulement
+ *  (./edc16c31-e46.ts). Sur un autre soft, la solution ne s'applique pas. */
+const EDC16C31_SOLUTIONS: Solution[] = [
+  {
+    id: 'edc16c31_e46_320d_stage1',
+    name: 'Stage 1 (E46 320d 150 ch)',
+    description: 'Stage 1 éprouvé sur route, SW 1037361858',
+    category: 'performance',
+    icon: 'zap',
+    credits: 0,
+  },
+  {
+    id: 'edc16c31_e46_320d_egr_off',
+    name: 'EGR OFF',
+    description: "Coupe l'EGR (SW 1037361858)",
+    category: 'emissions',
+    icon: 'wind',
+    credits: 0,
+  },
+];
+
 const SOLUTION_IMPLEMENTATIONS: Record<string, SolutionImplementation> = {
   launch_control: launchControl,
+  edc16c31_e46_320d_stage1: edc16c31E46Stage1,
+  edc16c31_e46_320d_egr_off: edc16c31E46EgrOff,
 };
 
-/** Familles supportées : EDC15P et EDC15VM uniquement. */
+/** Familles supportées : EDC15P, EDC15VM et EDC16C31. */
 export function getSolutionsForECU(ecuType: string | undefined): ECUSolutionsConfig | null {
   if (!ecuType) return null;
   const upper = ecuType.toUpperCase();
+  if (isEdc16c31(upper)) {
+    return { ecuType: 'EDC16C31', manufacturer: 'Bosch', solutions: EDC16C31_SOLUTIONS };
+  }
   if (!isVagEdc15(upper)) return null;
 
   return {
