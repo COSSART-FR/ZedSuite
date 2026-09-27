@@ -203,8 +203,8 @@
     "file_sizes": [
       "1MB"
     ],
-    "vehicles": "BMW DDE - calibrated on E46 320d 150 hp (M47TU, SW 1037361858)",
-    "detection_method": "Self-describing Kf/Kl blocks in the checksummed calibration region, calibrated on one software (3 files)",
+    "vehicles": "BMW DDE - E46 320d 150 hp (M47TU, SW 1037361858), E46 330d (M57, SW 1037361811)",
+    "detection_method": "Self-describing Kf/Kl blocks in the checksummed calibration region, calibrated on two softwares (4 files)",
     "status": "beta",
     "enabled": true,
     "map_categories": [

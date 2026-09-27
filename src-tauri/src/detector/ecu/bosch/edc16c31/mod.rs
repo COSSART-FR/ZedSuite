@@ -94,10 +94,51 @@ impl EDC16C31Detector {
         let Some((region, maps, curves)) = self.blocks(data) else {
             return Vec::new();
         };
-        families::classify(&maps, &curves, self.tuned)
-            .iter()
-            .map(|c| self.build(&c.spec, &c.block, &region))
-            .collect()
+        let classified = families::classify(&maps, &curves, self.tuned);
+        let mut out: Vec<DetectedMap> = classified.iter().map(|c| self.build(&c.spec, &c.block, &region)).collect();
+        if let Some(addr) = self.find_svbl(data, &maps, &classified) {
+            out.push(self.build_single(&spec::SVBL, addr, &region));
+            out.sort_by_key(|m| m.address);
+        }
+        out
+    }
+
+    /// SVBL: the single value right before the block that follows the
+    /// atmospheric boost limiter, itself followed by the minimum boost set
+    /// point (0 on the stock reads). Same place on the two reference
+    /// softwares (0xF9C60 on SW 1037361858, 0xFA268 on SW 1037361811 where
+    /// a WinOLS project names it "Größter erlaubter Ladedrucksollwert"), and
+    /// the 320d stage 1 raises it 2400 -> 2520 hPa.
+    fn find_svbl(&self, data: &[u8], maps: &[Block], classified: &[families::Classified]) -> Option<usize> {
+        let limiter = classified.iter().find(|c| c.spec.name == spec::BOOST_LIMITER_ATM.name)?;
+        let next = maps.iter().find(|m| m.addr > limiter.block.addr)?;
+        let at = next.addr.checked_sub(4)?;
+        if at < limiter.block.end() {
+            return None;
+        }
+        let value = i16::from_be_bytes([data[at], data[at + 1]]);
+        let min = i16::from_be_bytes([data[at + 2], data[at + 3]]);
+        let ceiling = if self.tuned { 4500 } else { 4000 };
+        ((1500..=ceiling).contains(&value) && (0..value).contains(&min)).then_some(at)
+    }
+
+    fn build_single(&self, spec: &MapSpec, addr: usize, region: &ChecksumRegion) -> DetectedMap {
+        let mut m = DetectedMap::new(addr as u32, 2, MapDimensions::OneDimensional { length: 1 }, DataType::UInt16);
+        m.id = format!("edc16c31_{:06X}", addr);
+        m.name = Some(spec.name.to_string());
+        m.category = Some(spec.category.display_name().to_string());
+        m.subcategory = Some(spec.subcategory.to_string());
+        m.description = Some(spec.description.to_string());
+        m.unit = Some(spec.unit.to_string());
+        m.correction_factor = Some(spec.z_factor);
+        m.offset = Some(0.0);
+        m.confidence = spec.confidence;
+        m.is_little_endian = Some(false);
+        m.as_stored = Some(true);
+        m.codeblock_id = Some(1);
+        m.codeblock_start_address = Some(region.start as u32);
+        m.codeblock_end_address = Some((region.end + 1) as u32);
+        m
     }
 
     /// rows = first axis (Y), cols = second axis (X); big-endian.
@@ -303,7 +344,7 @@ pub(crate) mod tests {
                 "Torque limiter 2",
                 "Torque limiter 3",
                 "Torque limiter 4",
-                "Torque limiter 5"
+                "Engine speed limiter (torque)"
             ]
         );
         let c = &maps[0];

@@ -10,6 +10,7 @@
 //!
 //!   ZEDSUITE_C31_DUMP_320D=/path/origine \
 //!   ZEDSUITE_C31_DUMP_320D_TUNED=/path/stage1-egroff \
+//!   ZEDSUITE_C31_DUMP_330D=/path/330d-1037361811.bin \
 //!     cargo test --test edc16c31_dump -- --ignored --nocapture
 //!
 //! A variable left unset skips that file. The stock read must come back
@@ -84,7 +85,7 @@ fn check_axis(data: &[u8], m: &DetectedMap, addr: Option<u32>, n: usize, corr: O
     }
 }
 
-fn bench(tag: &str, var: &str, expect_sw: &str) {
+fn bench(tag: &str, var: &str, expect_sw: &str, fixture_tag: &str) {
     let Some(data) = dump(var) else {
         eprintln!("{} not set, {} skipped", var, tag);
         return;
@@ -102,7 +103,7 @@ fn bench(tag: &str, var: &str, expect_sw: &str) {
         println!("  0x{:06X} {:>2}x{:<2} {}", m.address, r, c, m.name.clone().unwrap_or_default());
     }
 
-    let expected = fixture("320d-1037361858").maps;
+    let expected = fixture(fixture_tag).maps;
     let got: BTreeMap<String, &DetectedMap> = maps.iter().map(|m| (m.name.clone().unwrap_or_default(), m)).collect();
     assert_eq!(got.len(), maps.len(), "{}: duplicate map names", tag);
 
@@ -141,13 +142,21 @@ fn bench(tag: &str, var: &str, expect_sw: &str) {
 #[test]
 #[ignore = "needs ZEDSUITE_C31_DUMP_320D"]
 fn e46_320d_stock_read_matches_the_calibration() {
-    bench("320d stock", "ZEDSUITE_C31_DUMP_320D", "1037361858");
+    bench("320d stock", "ZEDSUITE_C31_DUMP_320D", "1037361858", "320d-1037361858");
 }
 
 #[test]
 #[ignore = "needs ZEDSUITE_C31_DUMP_320D_TUNED"]
 fn e46_320d_tune_keeps_every_map() {
-    bench("320d tuned", "ZEDSUITE_C31_DUMP_320D_TUNED", "1037361858");
+    bench("320d tuned", "ZEDSUITE_C31_DUMP_320D_TUNED", "1037361858", "320d-1037361858");
+}
+
+/// A sister software (E46 330d M57, SW 1037361811): same layout, other
+/// addresses. Nothing in the detector was tuned on this file.
+#[test]
+#[ignore = "needs ZEDSUITE_C31_DUMP_330D"]
+fn e46_330d_sister_software_matches_its_winols_project() {
+    bench("330d stock", "ZEDSUITE_C31_DUMP_330D", "1037361811", "330d-1037361811");
 }
 
 /// The stock read carries four checksum regions; the three that were read

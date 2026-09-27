@@ -1,0 +1,203 @@
+{
+ "source": "E46 330d read (M57, 0281010565, Bosch SW 1037361811), from a public damos archive: detector output, cross-checked against the map list of a WinOLS 5 project of the same software (driver wish x2, torque limiter, the four gear limiters and the engine speed limiter curve, torque to IQ x3, injector durations x6, boost targets x3, SVBL, rail targets x2, rail maximum, one SOI and one rail limiter named 'Map Bosch II 16' there). The project puts the atmospheric boost limiter at 0xFA108, 0xB8 bytes after the data the block header describes (0xFA050): the detector follows the header.",
+ "maps": [
+  {
+   "name": "Driver wish 1",
+   "address": 919156,
+   "rows": 16,
+   "cols": 10
+  },
+  {
+   "name": "Driver wish 2",
+   "address": 919736,
+   "rows": 16,
+   "cols": 10
+  },
+  {
+   "name": "Smoke limiter (boost pressure)",
+   "address": 922542,
+   "rows": 12,
+   "cols": 16
+  },
+  {
+   "name": "Torque limiter",
+   "address": 944070,
+   "rows": 21,
+   "cols": 1
+  },
+  {
+   "name": "Torque limiter 1",
+   "address": 945838,
+   "rows": 21,
+   "cols": 1
+  },
+  {
+   "name": "Torque limiter 2",
+   "address": 945924,
+   "rows": 21,
+   "cols": 1
+  },
+  {
+   "name": "Torque limiter 3",
+   "address": 946006,
+   "rows": 19,
+   "cols": 1
+  },
+  {
+   "name": "Torque limiter 4",
+   "address": 946096,
+   "rows": 21,
+   "cols": 1
+  },
+  {
+   "name": "Engine speed limiter (torque)",
+   "address": 946182,
+   "rows": 21,
+   "cols": 1
+  },
+  {
+   "name": "Torque to IQ 1",
+   "address": 950742,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Torque to IQ 2",
+   "address": 951322,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Torque to IQ 3",
+   "address": 951902,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Main injection SOI 1",
+   "address": 962876,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Main injection SOI 2",
+   "address": 963456,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Main injection SOI 3",
+   "address": 964036,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Main injection SOI 4",
+   "address": 964616,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Main injection SOI 5",
+   "address": 965196,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Injector duration 1",
+   "address": 1006540,
+   "rows": 16,
+   "cols": 32
+  },
+  {
+   "name": "Injector duration 2",
+   "address": 1007664,
+   "rows": 16,
+   "cols": 32
+  },
+  {
+   "name": "Injector duration 3",
+   "address": 1008788,
+   "rows": 16,
+   "cols": 32
+  },
+  {
+   "name": "Injector duration 4",
+   "address": 1009912,
+   "rows": 16,
+   "cols": 32
+  },
+  {
+   "name": "Injector duration 5",
+   "address": 1011036,
+   "rows": 16,
+   "cols": 32
+  },
+  {
+   "name": "Injector duration 6",
+   "address": 1012160,
+   "rows": 16,
+   "cols": 32
+  },
+  {
+   "name": "Boost target map 1",
+   "address": 1022364,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Boost target map 2",
+   "address": 1022944,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Boost target map 3",
+   "address": 1023524,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Boost limiter (atmospheric pressure)",
+   "address": 1024080,
+   "rows": 10,
+   "cols": 10
+  },
+  {
+   "name": "SVBL (Single value boost limiter)",
+   "address": 1024616,
+   "rows": 1,
+   "cols": 1
+  },
+  {
+   "name": "Rail pressure limiter 1",
+   "address": 1032762,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Rail pressure limiter 2",
+   "address": 1035454,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Rail pressure target map 1",
+   "address": 1036084,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Rail pressure target map 2",
+   "address": 1037256,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Rail pressure maximum",
+   "address": 1038144,
+   "rows": 12,
+   "cols": 8
+  }
+ ]
+}

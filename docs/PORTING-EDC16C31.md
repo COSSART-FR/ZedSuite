@@ -2,9 +2,11 @@
 
 Support de la famille Bosch EDC16C31 dans le moteur de détection de ZedSuite.
 
-**État : bêta, calibré sur UN logiciel (trois fichiers).** 36 maps nommées,
-adresses vérifiées sur la lecture d'origine et retrouvées à l'identique sur
-les deux tunes du même soft. Le module est activé (`ecus.json` :
+**État : bêta, calibré sur un logiciel, vérifié sur un deuxième.** 38 maps
+nommées sur la 320d (SW `1037361858`), adresses vérifiées sur la lecture
+d'origine et retrouvées à l'identique sur les deux tunes du même soft ; 33
+sur un soft frère, E46 330d (SW `1037361811`), sans rien retoucher au
+détecteur, recoupées avec un projet WinOLS de ce soft. Le module est activé (`ecus.json` :
 `status: beta`, `enabled: true`), l'export mappack reste désactivé. Le
 checksum de la région de calibration est vérifié et corrigé.
 
@@ -15,12 +17,23 @@ Corpus :
 | `origine` | lecture d'origine, E46 320d 150 ch (M47TU), SW Bosch `1037361858` | valide |
 | `stage1-egroff` | stage 1 + EGR off du même soft | non corrigé (l'outil de flash le fait) |
 | `stage1-egroff-hardcut` | idem + rupteur 5250 → 4300 tr/min | non corrigé |
+| `330d-1037361811` | lecture d'origine E46 330d (M57, 0281010565), archive damos | valide |
 
-Il n'y a **pas de damos** de ce soft dans le projet. Les noms viennent de la
-structure des blocs, des valeurs physiques et du diff origine → stage 1 ; les
-36 adresses de données ont ensuite été recoupées une par une avec une liste
-publique de maps du même logiciel (ecuedit.com, « BMW e46 320d 150hp Maps »,
-EDC16C31 SW 361858) : toutes tombent au même octet.
+Références :
+
+* **A2L Bosch BMW DDE 6.0** (projet P389, « BMW DDE6.0 4-Zylinder V53.4 »,
+  archive damos) : même génération EDC16, même format de blocs. Il donne les
+  conversions (`InjMass` en **mg/Hub** ×0.01, `Trq` Nm ×0.1, `Prc` 1/8192,
+  `Pres_Rail` bar ×0.1, `Pres_hPa`) et les fonctions : `AccPed_trqEngHigh/Low_MAP`
+  (2 driver wish), `FMTC_trq2qBas_MAP`, `InjCrv_phiMI1Bas1..5_MAP` (5 SOI),
+  `PCR_pDesBas_MAP`, `PCR_pDesMaxAP_MAP` (limiteur par pression atmo),
+  `EngPrt_trqNLim_CUR` (limiteur de régime en couple).
+* **Liste publique de maps de la 320d** (ecuedit.com, « BMW e46 320d 150hp
+  Maps », EDC16C31 SW 361858) : les 38 adresses de données tombent au même
+  octet.
+* **Projet WinOLS 5 du 330d** (SW 361811, archive damos) : liste de maps avec
+  adresses, lue par un script (format de projet trop ancien pour
+  `ols_maps.rs`). Voir « Deuxième logiciel ».
 
 ---
 
@@ -99,45 +112,53 @@ Adresses **de données** sur l'origine (SW `1037361858`) :
 | Famille | Nb | Données | Grille | Axes (lignes / colonnes) | Facteur | Unité |
 |---|---|---|---|---|---|---|
 | Driver wish | 2 | `E0674`, `E08B8` | 16×10 | régime / pédale | 0.1 | Nm |
-| Smoke limiter (boost pressure) | 1 | `E13AE` | 12×16 | pression de suralim. / régime | 0.01 | mm³/st |
+| Smoke limiter (boost pressure) | 1 | `E13AE` | 12×16 | pression de suralim. / régime | 0.01 | mg/st |
 | Torque limiter | 1 | `E66DA` | 21 | régime | 0.1 | Nm |
-| Torque limiter 1..5 | 5 | `E6DC2` … `E6F1A` | 21/19 | régime | 0.1 | Nm |
-| Torque to IQ 1..3 | 3 | `E80EA`, `E832E`, `E8572` | 16×16 | régime / couple | 0.01 | mm³/st |
+| Torque limiter 1..4 | 4 | `E6DC2` … `E6EC4` | 21/19 | régime | 0.1 | Nm |
+| Engine speed limiter (torque) | 1 | `E6F1A` | 21 | régime | 0.1 | Nm |
+| Torque to IQ 1..3 | 3 | `E80EA`, `E832E`, `E8572` | 16×16 | régime / couple | 0.01 | mg/st |
 | Main injection SOI 1..5 | 5 | `EA80C` … `EB11C` | 16×16 | régime / IQ | 3/128 | °CA |
 | Injector duration 1..6 | 6 | `F5364` … `F6958` | 16×32 | pression rail / IQ | 1 | µs |
 | Boost actuator duty map 1..5 | 5 | `F7F44` … `F8900`, `FA3DC` | 16×16 | régime / IQ | 100/8192 | % |
 | Boost target map 1..3 | 3 | `F9394`, `F95D8`, `F981C` | 16×16 | régime / IQ | 1 | mbar |
 | Boost limiter (atmospheric pressure) | 1 | `F9A48` | 10×10 | régime / pression atmo | 1 | mbar |
+| SVBL (Single value boost limiter) | 1 | `F9C60` | 1 | — | 1 | mbar |
 | Rail pressure limiter 1..2 | 2 | `FBCD6`, `FC75A` | 16×16 | régime / consigne rail | 0.1 | bar |
 | Rail pressure target map 1..2 | 2 | `FC9D0`, `FCE64` | 16×16 | régime / IQ | 0.1 | bar |
+| Rail pressure maximum | 1 | `FD1DC` | 12×8 | régime / IQ | 0.1 | bar |
 
 Chaque famille n'est rapportée que si le fichier répond avec son jeu
 complet : exactement 2 driver wish, 3 torque to IQ, 5 SOI **adjacentes**, 6
 durations **adjacentes**, 3 boost targets, 5 duty, 2 rail targets, 2 rail
-limiters, 5 courbes de limiteur **contiguës**, et exactement un smoke
-limiter, un boost limiter, un limiteur principal. Sinon la famille est
-abandonnée entière. Aucune règle ne lit une adresse.
+limiters, 5 courbes de limiteur **contiguës** (4 limiteurs + le limiteur de
+régime), et exactement un smoke limiter, un boost limiter, une pression rail
+maximale, un limiteur principal. Sinon la famille est abandonnée entière.
+Aucune règle ne lit une adresse.
+
+**SVBL** n'est pas un bloc auto-décrit : c'est la valeur seule placée juste
+avant le bloc qui suit le limiteur de boost atmo, suivie de la consigne de
+boost minimale (0). Même place sur les deux softs (`F9C60` sur la 320d,
+`FA268` sur le 330d, nommée « Größter erlaubter Ladedrucksollwert » dans le
+projet WinOLS), et le stage 1 de la 320d la passe de 2400 à 2520 hPa.
 
 ### Conversions et ce qui les appuie
 
 | Grandeur | Brut → physique | Vérification sur l'origine |
 |---|---|---|
 | régime | ×1 tr/min | axes 250..5020, coupure à 5020 |
-| quantité | ×0.01 | axes jusqu'à 70..85 |
+| quantité | ×0.01 mg/coup | axes jusqu'à 70..85 mg ; 350 Nm → 56 mg à 2000 tr/min |
 | couple | ×0.1 Nm | driver wish −45..+377 Nm, limiteur 368 Nm en crête |
 | pédale | ×100/8192 % | l'axe finit exactement à 8192 (`Prc` Bosch) |
 | rapport cyclique | ×100/8192 % | N75 15..83 % |
-| pression rail | ×0.1 bar | consignes 300..1605 bar, SVRL 1600 bar |
+| pression rail | ×0.1 bar | consignes 300..1605 bar, maximum 1600 bar |
 | suralimentation | ×1 hPa | 990 hPa au ralenti, 2400 hPa en pleine charge |
 | avance | ×3/128 °CA | 2..32 °CA avant PMH |
 | temps d'injection | ×1 µs | 1211 µs pour 85 à 1600 bar, plafond 5000 µs |
 
-⚠ **L'unité de quantité n'est pas confirmée.** Elle est affichée en
-**mm³/coup** comme dans les A2L Bosch des deux projets voisins (DDE 4.0 de la
-E39 et CP31 Mercedes, même format de blocs). Un bilan énergétique sur la map
-Torque to IQ (350 Nm → 56,2 unités à 2000 tr/min) colle un peu mieux à des
-**mg** (rendement indiqué 45 % en mg, 55 % en mm³). Seul un damos BMW EDC16
-tranchera. Le facteur 0.01 n'est pas en cause, seulement le libellé.
+**La quantité est en mg/coup** chez BMW, contrairement au CP31 Mercedes et au
+DDE 4.0 (mm³) : l'A2L DDE 6.0 déclare `InjMass` / `InjMassCyc` en mg/Hub, et
+le projet WinOLS du 330d aussi (« mg/hub »). Ça colle au bilan énergétique
+(350 Nm → 56 mg à 2000 tr/min, rendement indiqué ≈45 %).
 
 ### Seuils de valeurs
 
@@ -145,7 +166,34 @@ L'app détecte **tous** les fichiers en mode stock (le `tuned_mode` n'est
 jamais passé par le frontend). Les plafonds « stock » laissent donc déjà la
 place à un remap courant (boost 4000 hPa, rail 2000 bar, limiteurs 800 Nm) :
 ce qui distingue une famille ici, ce sont ses axes et son jeu, pas ses
-valeurs. Les deux tunes du corpus sortent les 36 maps en mode stock.
+valeurs. Les deux tunes du corpus sortent les 38 maps en mode stock.
+
+---
+
+## Deuxième logiciel : E46 330d, SW 1037361811
+
+Même disposition que la 320d (région de calibration `0xE0180..0xFEFFB`,
+famille `/EDC16C31/`, checksum valide), autres adresses. Le détecteur, sans
+aucune retouche, en sort 33 maps. Le projet WinOLS du même soft en nomme 24
+aux mêmes octets : driver wish ×2, torque limiter, les 4 limiteurs par
+rapport, le limiteur de régime (« Kennlinie für Drehzahlbegrenzung im
+Normalbetrieb »), torque to IQ ×3, durations ×6, boost targets ×3, SVBL, rail
+targets ×2, pression rail maximale, et une SOI et un limiteur rail qu'il
+appelle « Map Bosch II 16 ». Un seul écart : le projet met le limiteur de
+boost atmo à `0xFA108`, 0xB8 octets après les données que décrit l'en-tête
+du bloc (`0xFA050`) ; le détecteur suit l'en-tête. Les 5 maps N75 ne sortent
+pas sur ce soft (4 blocs répondent, le jeu est abandonné).
+
+## Autre génération : SW 1037361861 et 1037361891
+
+Deux lectures de l'archive (E60/E61 et E46 330d 204 ch) ont une autre
+disposition : région de calibration `0xDFF80..0xFFBFB`, programme lu en
+entier, pas de driver wish en couple sur un axe pédale 0..8192, durations
+qui ne sont pas des blocs `Kf` simples. Elles sont bien identifiées
+EDC16C31, mais le détecteur n'en sort que ce qui répond à ses règles (16 et 6
+maps : smoke limiter, boost targets, limiteur atmo, SVBL, et SOI / N75 sur
+la E60), **sans référence pour le vérifier**. À traiter avec un damos de
+cette génération.
 
 ---
 
@@ -155,15 +203,16 @@ valeurs. Les deux tunes du corpus sortent les 36 maps en mode stock.
 |---|---|---|
 | `E2A22`, `E2B54` | courbes « EGR hysteresis » (non exposées) | mises à zéro → **EGR off** |
 | `E66DA` | Torque limiter | crête 322 Nm → 650 Nm |
-| `E6DC2..E6F1A` | Torque limiter 1..5 | plafonnés à 600 Nm |
+| `E6DC2..E6F1A` | Torque limiter 1..4 + limiteur de régime | plafonnés à 600 Nm |
 | `EA80C..EB11C` | SOI 1..5 | avance +0,4..3,2 °CA en charge |
 | `F5364..F6958` | Injector duration 1..6 | +2..19 % en haut de quantité |
 | `F9394..F981C` | Boost target 1..3 | +120 hPa en charge |
 | `F9A48` | Boost limiter atmo | +120 hPa |
-| `F9C60` | SVBL (valeur seule, non exposée) | 2400 → 2520 hPa |
+| `F9C60` | SVBL | 2400 → 2520 hPa |
 | `FBCD6`, `FC75A` | Rail pressure limiter 1..2 | dernière colonne 1600 → 1660 bar |
 | `FC9D0`, `FCE64` | Rail pressure target 1..2 | +40..70 bar en charge (max 1605 → 1675 bar) |
-| `FD18C` | SVRL (valeur seule, non exposée) | 1600 → 1670 bar |
+| `FD1DC` | Rail pressure maximum | 1600 → 1670 bar partout |
+| `FD18C` | valeur seule 1600 → 1670 bar (non exposée) | |
 
 Le driver wish et les maps Torque to IQ ne sont **pas** touchés : le gain passe
 par les limiteurs, la suralimentation et surtout les **temps d'injection**
@@ -174,15 +223,12 @@ seul mot, à `0xE6D5E` : 5250 → 4300 tr/min (valeur seule, non exposée).
 
 ## Ce qu'il reste à faire
 
-1. **Un deuxième logiciel.** Tout est calibré sur un seul soft. Les jeux
-   (2 driver wish, 5 SOI, 6 durations…) peuvent être propres à ce soft ; un
-   deuxième fichier dira ce qui appartient au calculateur. Le module est aussi
-   probablement proche de ce qu'il faut pour les M57TU (330d, 530d) en
-   EDC16C31, mais rien n'a été vérifié.
-2. **L'unité de quantité** (mm³ ou mg), voir plus haut.
-3. **Les valeurs seules** : SVBL (`F9C60`), SVRL (`FD18C`), rupteur (`E6D5E`).
-   Ce ne sont pas des blocs auto-décrits ; les trouver sans adresse fixe
-   demande une ancre structurelle qu'on n'a pas encore.
+1. **Plus de logiciels.** Deux softs de la même génération passent ; la
+   génération suivante (361861, 361891) demande un damos.
+2. **Les N75** ne sortent pas sur le 330d (4 blocs sur 5) : le jeu de 5 est
+   peut-être propre à la 320d.
+3. **Les valeurs seules** restantes : `FD18C` (1600 → 1670 bar au stage 1),
+   rupteur (`E6D5E`). Pas encore d'ancre structurelle.
 4. **L'EGR.** Les courbes mises à zéro par le EGR off (25 points, régime avec
    points factices 4510..4650) sont visibles mais leur sens n'est pas établi :
    pas exposées.
@@ -212,10 +258,12 @@ Banc sur les vrais fichiers (non versionnés), `#[ignore]` :
 ```sh
 ZEDSUITE_C31_DUMP_320D=/chemin/origine \
 ZEDSUITE_C31_DUMP_320D_TUNED=/chemin/stage1-egroff \
+ZEDSUITE_C31_DUMP_330D=/chemin/330d-1037361811.bin \
   cargo test --test edc16c31_dump -- --ignored --nocapture
 ```
 
-Liste attendue : `tests/fixtures/edc16c31/320d-1037361858.json`. Le test
+Listes attendues : `tests/fixtures/edc16c31/320d-1037361858.json` et
+`330d-1037361811.json`. Le test
 vérifie noms, adresses, grilles, et que chaque axe exporté est strictement
 croissant et plausible pour son libellé.
 

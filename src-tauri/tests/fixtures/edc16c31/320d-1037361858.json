@@ -50,7 +50,7 @@
    "cols": 1
   },
   {
-   "name": "Torque limiter 5",
+   "name": "Engine speed limiter (torque)",
    "address": 945946,
    "rows": 21,
    "cols": 1
@@ -188,6 +188,12 @@
    "cols": 10
   },
   {
+   "name": "SVBL (Single value boost limiter)",
+   "address": 1023072,
+   "rows": 1,
+   "cols": 1
+  },
+  {
    "name": "Boost actuator duty map 5",
    "address": 1024988,
    "rows": 16,
@@ -216,6 +222,12 @@
    "address": 1035876,
    "rows": 16,
    "cols": 16
+  },
+  {
+   "name": "Rail pressure maximum",
+   "address": 1036764,
+   "rows": 12,
+   "cols": 8
   }
  ]
 }

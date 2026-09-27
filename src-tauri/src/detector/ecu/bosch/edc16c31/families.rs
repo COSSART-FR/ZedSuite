@@ -8,8 +8,9 @@
 //! number of blocks: two driver wish maps, three torque-to-IQ maps, five
 //! SOI maps in a row, six injector durations in a row, three boost
 //! targets, five duty maps, two rail targets, two rail limiters, five
-//! contiguous torque limiter curves, and exactly one smoke limiter, one
-//! boost limiter and one main torque limiter. Anything else means the rule
+//! contiguous torque limiter curves (the last one is the engine speed
+//! limiter), and exactly one smoke limiter, one boost limiter, one rail
+//! pressure maximum and one main torque limiter. Anything else means the rule
 //! does not recognise this software, and the family is dropped whole
 //! rather than guessed ("fewer maps that are right", CONTRIBUTING.md).
 
@@ -175,6 +176,17 @@ fn is_rail_limiter(b: &Block, l: Limits) -> bool {
         && rows_non_decreasing(b)
 }
 
+fn is_rail_max(b: &Block, l: Limits) -> bool {
+    let Some(q) = second(b) else { return false };
+    // 12 x 8 on the reference softwares, near-constant 1600 bar stock
+    is_rpm(&b.first)
+        && b.first.last() >= 5000
+        && q.first() == 0
+        && (3000..=9000).contains(&q.last())
+        && b.min() >= 12_000
+        && b.max() <= l.pick(20_000, 22_000)
+}
+
 fn is_duty(b: &Block, _l: Limits) -> bool {
     let Some(q) = second(b) else { return false };
     // 12..100 %, never flat (a flat 8192 block is a disabled program)
@@ -277,6 +289,7 @@ pub fn classify(maps: &[Block], curves: &[Block], tuned: bool) -> Vec<Classified
     push(maps, exactly(maps, l, 1, is_boost_limiter_atm), &|_| spec::BOOST_LIMITER_ATM);
     push(maps, exactly(maps, l, 2, is_rail_target), &spec::rail_target);
     push(maps, exactly(maps, l, 2, is_rail_limiter), &spec::rail_limiter);
+    push(maps, exactly(maps, l, 1, is_rail_max), &|_| spec::RAIL_MAX);
     push(maps, exactly(maps, l, 5, is_duty), &spec::duty);
 
     // Curves: the contiguous set of five first (a 19-point curve in a

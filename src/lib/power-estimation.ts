@@ -97,7 +97,8 @@ export const ENGINE_PRESETS = [
   // not mg: the estimate is ~16 % optimistic there until a density
   // correction is added (docs/PORTING-EDC15C4.md).
   { id: "6cyl25", label: "2.5d — 6 cyl. (M57D25)", cylinders: 6, displacement: 2.497 },
-  // BMW M47TU (E46 320d 150 hp, EDC16C31). Same mm³ caveat as the M57D25
+  // BMW M47TU (E46 320d 150 hp, EDC16C31). Quantities in mg/stroke there
+  // (BMW DDE A2L), but the model is not calibrated on this ECU yet
   // (docs/PORTING-EDC16C31.md).
   { id: "4cyl20m47", label: "2.0d — 4 cyl. (M47)", cylinders: 4, displacement: 1.995 },
 ] as const;

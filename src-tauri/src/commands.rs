@@ -221,7 +221,9 @@ pub fn import_map_definitions(
 ///       EDC15VM sans référence VAG dans le binaire n'est plus pris
 ///       pour un EDC15P (2.5 V6).
 ///   53 — EDC16C31 (BMW DDE) : famille ajoutée (branche edc16c31-calibration).
-pub const DETECTOR_VERSION: u32 = 53;
+///   54 — EDC16C31 : quantités en mg/coup (A2L BMW DDE6), limiteur de régime,
+///       pression rail maximale, SVBL.
+pub const DETECTOR_VERSION: u32 = 54;
 
 /// Version du moteur de détection, pour comparaison avec celle enregistrée
 /// dans un projet.
@@ -644,8 +646,8 @@ fn build_expected_report_edc15c4(maps: &[DetectedMap]) -> Option<Vec<ExpectedMap
 
 /// EDC16C31 (BMW DDE). The sets the detector reports as a whole, from the
 /// one software of the corpus (E46 320d, SW 1037361858): two driver wish
-/// maps, three torque-to-IQ maps, the main torque limiter and the set of
-/// five limiter curves, five main SOI maps, six injector durations, three
+/// maps, three torque-to-IQ maps, the main torque limiter, the four limiter
+/// curves and the engine speed limiter curve, five main SOI maps, six injector durations, three
 /// boost targets, the atmospheric boost limiter, two rail targets. A
 /// second software will tell which of these counts belong to the ECU and
 /// which to this calibration (docs/PORTING-EDC16C31.md).
@@ -662,7 +664,8 @@ fn build_expected_report_edc16c31(maps: &[DetectedMap]) -> Option<Vec<ExpectedMa
         ("Driver wish 1-2", 2, count_prefix("Driver wish")),
         ("Torque to IQ 1-3", 3, count_prefix("Torque to IQ")),
         ("Torque limiter", 1, count_exact("Torque limiter")),
-        ("Torque limiter 1-5", 5, count_prefix("Torque limiter ")),
+        ("Torque limiter 1-4", 4, count_prefix("Torque limiter ")),
+        ("Engine speed limiter (torque)", 1, count_exact("Engine speed limiter (torque)")),
         ("Main injection SOI 1-5", 5, count_prefix("Main injection SOI")),
         ("Injector duration 1-6", 6, count_prefix("Injector duration")),
         ("Boost target map 1-3", 3, count_prefix("Boost target map")),
