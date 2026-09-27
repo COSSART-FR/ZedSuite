@@ -2,9 +2,9 @@
 
 Support de la famille Bosch EDC16C31 dans le moteur de détection de ZedSuite.
 
-**État : bêta, calibré sur un logiciel, vérifié sur un deuxième.** 38 maps
+**État : bêta, calibré sur un logiciel, vérifié sur un deuxième.** 42 maps
 nommées sur la 320d (SW `1037361858`), adresses vérifiées sur la lecture
-d'origine et retrouvées à l'identique sur les deux tunes du même soft ; 33
+d'origine et retrouvées à l'identique sur les deux tunes du même soft ; 41
 sur un soft frère, E46 330d (SW `1037361811`), sans rien retoucher au
 détecteur, recoupées avec un projet WinOLS de ce soft. Le module est activé (`ecus.json` :
 `status: beta`, `enabled: true`), l'export mappack reste désactivé. Le
@@ -126,6 +126,9 @@ Adresses **de données** sur l'origine (SW `1037361858`) :
 | Rail pressure limiter 1..2 | 2 | `FBCD6`, `FC75A` | 16×16 | régime / consigne rail | 0.1 | bar |
 | Rail pressure target map 1..2 | 2 | `FC9D0`, `FCE64` | 16×16 | régime / IQ | 0.1 | bar |
 | Rail pressure maximum | 1 | `FD1DC` | 12×8 | régime / IQ | 0.1 | bar |
+| Rail pressure maximum (single value) | 1 | `FD18C` | 1 | — | 0.1 | bar |
+| SVRL - RPM Limiter | 1 | `E6D5E` | 1 | — | 1 | tr/min |
+| EGR cut-off quantity (upper / lower) | 2 | `E2A22`, `E2B54` | 25 | régime | 0.01 | mg/st |
 
 Chaque famille n'est rapportée que si le fichier répond avec son jeu
 complet : exactement 2 driver wish, 3 torque to IQ, 5 SOI **adjacentes**, 6
@@ -140,6 +143,29 @@ avant le bloc qui suit le limiteur de boost atmo, suivie de la consigne de
 boost minimale (0). Même place sur les deux softs (`F9C60` sur la 320d,
 `FA268` sur le 330d, nommée « Größter erlaubter Ladedrucksollwert » dans le
 projet WinOLS), et le stage 1 de la 320d la passe de 2400 à 2520 hPa.
+
+Les deux autres valeurs seules ont aussi une ancre, identique sur les deux
+softs :
+
+* **SVRL** (A2L `EngPrt_nOvrSpd_C`, seuil de surrégime = coupure d'injection)
+  ouvre le bloc de valeurs de protection moteur qui se termine par la courbe
+  de sélection des rapports `EngPrt_swtTrqGear_CUR` (8 points, axe −1..6),
+  posée juste avant la première courbe du jeu de limiteurs. La valeur est
+  0x16 octets avant cette courbe, suivie de la pression atmo par défaut
+  (750 hPa). 5250 tr/min d'origine, 4300 sur le fichier « hardcut ».
+* **Pression rail max (valeur seule)** : le mot juste avant la courbe de 8
+  points qui précède la map de pression rail maximale (1600 bar sur la 320d,
+  1670 au stage 1 ; 1800 bar sur le 330d).
+
+**Coupure EGR** (A2L `AirCtl_qHi_CUR` / `AirCtl_qLo_CUR`, « Hysteresegrenze
+für Abschaltung bei großer Einspritzmenge ») : au-delà de cette quantité
+l'EGR est coupé. Deux courbes de 25 points de régime dont les derniers points
+inutilisés sont des points factices à 10 tr/min d'écart (4510..4650), à
+quelques octets l'une de l'autre, haute puis basse. Un EGR off les met à 0
+partout : c'est exactement ce que fait le stage 1 de la 320d.
+
+Les **N75** : 5 cartes sur la 320d, 4 sur le 330d (la première n'existe pas
+sur ce soft). Le jeu est accepté à 4 ou 5.
 
 ### Conversions et ce qui les appuie
 
@@ -174,15 +200,16 @@ valeurs. Les deux tunes du corpus sortent les 38 maps en mode stock.
 
 Même disposition que la 320d (région de calibration `0xE0180..0xFEFFB`,
 famille `/EDC16C31/`, checksum valide), autres adresses. Le détecteur, sans
-aucune retouche, en sort 33 maps. Le projet WinOLS du même soft en nomme 24
+aucune retouche, en sortait 33 maps (41 aujourd'hui, avec les N75 à 4, la
+coupure EGR, le SVRL et la pression rail max en valeur seule). Le projet WinOLS du même soft en nomme 24
 aux mêmes octets : driver wish ×2, torque limiter, les 4 limiteurs par
 rapport, le limiteur de régime (« Kennlinie für Drehzahlbegrenzung im
 Normalbetrieb »), torque to IQ ×3, durations ×6, boost targets ×3, SVBL, rail
 targets ×2, pression rail maximale, et une SOI et un limiteur rail qu'il
 appelle « Map Bosch II 16 ». Un seul écart : le projet met le limiteur de
 boost atmo à `0xFA108`, 0xB8 octets après les données que décrit l'en-tête
-du bloc (`0xFA050`) ; le détecteur suit l'en-tête. Les 5 maps N75 ne sortent
-pas sur ce soft (4 blocs répondent, le jeu est abandonné).
+du bloc (`0xFA050`) ; le détecteur suit l'en-tête. Ce soft n'a que 4 cartes
+N75.
 
 ## Autre génération : SW 1037361861 et 1037361891
 
@@ -201,7 +228,7 @@ cette génération.
 
 | Zone | Map | Modification |
 |---|---|---|
-| `E2A22`, `E2B54` | courbes « EGR hysteresis » (non exposées) | mises à zéro → **EGR off** |
+| `E2A22`, `E2B54` | EGR cut-off quantity (upper / lower) | mises à zéro → **EGR off** |
 | `E66DA` | Torque limiter | crête 322 Nm → 650 Nm |
 | `E6DC2..E6F1A` | Torque limiter 1..4 + limiteur de régime | plafonnés à 600 Nm |
 | `EA80C..EB11C` | SOI 1..5 | avance +0,4..3,2 °CA en charge |
@@ -212,12 +239,12 @@ cette génération.
 | `FBCD6`, `FC75A` | Rail pressure limiter 1..2 | dernière colonne 1600 → 1660 bar |
 | `FC9D0`, `FCE64` | Rail pressure target 1..2 | +40..70 bar en charge (max 1605 → 1675 bar) |
 | `FD1DC` | Rail pressure maximum | 1600 → 1670 bar partout |
-| `FD18C` | valeur seule 1600 → 1670 bar (non exposée) | |
+| `FD18C` | Rail pressure maximum (single value) | 1600 → 1670 bar |
 
 Le driver wish et les maps Torque to IQ ne sont **pas** touchés : le gain passe
 par les limiteurs, la suralimentation et surtout les **temps d'injection**
 (plus de carburant réel pour la même quantité demandée). Le hardcut change un
-seul mot, à `0xE6D5E` : 5250 → 4300 tr/min (valeur seule, non exposée).
+seul mot, le SVRL à `0xE6D5E` : 5250 → 4300 tr/min.
 
 ---
 
@@ -225,22 +252,18 @@ seul mot, à `0xE6D5E` : 5250 → 4300 tr/min (valeur seule, non exposée).
 
 1. **Plus de logiciels.** Deux softs de la même génération passent ; la
    génération suivante (361861, 361891) demande un damos.
-2. **Les N75** ne sortent pas sur le 330d (4 blocs sur 5) : le jeu de 5 est
-   peut-être propre à la 320d.
-3. **Les valeurs seules** restantes : `FD18C` (1600 → 1670 bar au stage 1),
-   rupteur (`E6D5E`). Pas encore d'ancre structurelle.
-4. **L'EGR.** Les courbes mises à zéro par le EGR off (25 points, régime avec
-   points factices 4510..4650) sont visibles mais leur sens n'est pas établi :
-   pas exposées.
-5. **Smoke limiter par débit d'air** (`E15FC`, 16×16 régime × IQ, 480..1260
+2. **Les autres cartes EGR** (consigne de masse d'air `AirCtl_mDesBas`,
+   rapports cycliques) ne sont pas encore exposées : l'EGR off du corpus
+   n'en a pas besoin.
+3. **Smoke limiter par débit d'air** (`E15FC`, 16×16 régime × IQ, 480..1260
    ×0.1) et **table lambda** (`E7A16`) : listées par la référence publique,
    sens et unités non confirmés, pas exposées.
-6. **L'estimation de puissance** ne connaît pas ce calculateur : sur
+4. **L'estimation de puissance** ne connaît pas ce calculateur : sur
    l'origine elle donne ≈115 ch au lieu de 150, et ne voit pas le gain du
    stage 1 (qui passe par les durations, que le modèle ne lit que sous les
    noms VAG « Duration 00/01 »). À ne pas croire tant qu'elle n'est pas
    calibrée.
-7. **DTC** : désactivé pour EDC16C31 (les tables de contrôle ne sont pas
+5. **DTC** : désactivé pour EDC16C31 (les tables de contrôle ne sont pas
    celles des EDC16 VAG).
 
 ---

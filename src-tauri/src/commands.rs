@@ -223,7 +223,9 @@ pub fn import_map_definitions(
 ///   53 — EDC16C31 (BMW DDE) : famille ajoutée (branche edc16c31-calibration).
 ///   54 — EDC16C31 : quantités en mg/coup (A2L BMW DDE6), limiteur de régime,
 ///       pression rail maximale, SVBL.
-pub const DETECTOR_VERSION: u32 = 54;
+///   55 — EDC16C31 : rupteur (SVRL), pression rail max en valeur seule,
+///       coupure EGR (hystérésis haute/basse), N75 par jeu de 4 ou 5.
+pub const DETECTOR_VERSION: u32 = 55;
 
 /// Version du moteur de détection, pour comparaison avec celle enregistrée
 /// dans un projet.

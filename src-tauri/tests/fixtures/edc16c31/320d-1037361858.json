@@ -20,9 +20,27 @@
    "cols": 16
   },
   {
+   "name": "EGR cut-off quantity (upper)",
+   "address": 928290,
+   "rows": 25,
+   "cols": 1
+  },
+  {
+   "name": "EGR cut-off quantity (lower)",
+   "address": 928596,
+   "rows": 25,
+   "cols": 1
+  },
+  {
    "name": "Torque limiter",
    "address": 943834,
    "rows": 21,
+   "cols": 1
+  },
+  {
+   "name": "SVRL - RPM Limiter",
+   "address": 945502,
+   "rows": 1,
    "cols": 1
   },
   {
@@ -222,6 +240,12 @@
    "address": 1035876,
    "rows": 16,
    "cols": 16
+  },
+  {
+   "name": "Rail pressure maximum (single value)",
+   "address": 1036684,
+   "rows": 1,
+   "cols": 1
   },
   {
    "name": "Rail pressure maximum",

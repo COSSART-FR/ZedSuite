@@ -20,9 +20,27 @@
    "cols": 16
   },
   {
+   "name": "EGR cut-off quantity (upper)",
+   "address": 928290,
+   "rows": 25,
+   "cols": 1
+  },
+  {
+   "name": "EGR cut-off quantity (lower)",
+   "address": 928596,
+   "rows": 25,
+   "cols": 1
+  },
+  {
    "name": "Torque limiter",
    "address": 944070,
    "rows": 21,
+   "cols": 1
+  },
+  {
+   "name": "SVRL - RPM Limiter",
+   "address": 945738,
+   "rows": 1,
    "cols": 1
   },
   {
@@ -140,6 +158,24 @@
    "cols": 32
   },
   {
+   "name": "Boost actuator duty map 1",
+   "address": 1018496,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Boost actuator duty map 2",
+   "address": 1019076,
+   "rows": 16,
+   "cols": 16
+  },
+  {
+   "name": "Boost actuator duty map 3",
+   "address": 1019656,
+   "rows": 16,
+   "cols": 16
+  },
+  {
    "name": "Boost target map 1",
    "address": 1022364,
    "rows": 16,
@@ -170,6 +206,12 @@
    "cols": 1
   },
   {
+   "name": "Boost actuator duty map 4",
+   "address": 1026532,
+   "rows": 16,
+   "cols": 16
+  },
+  {
    "name": "Rail pressure limiter 1",
    "address": 1032762,
    "rows": 16,
@@ -192,6 +234,12 @@
    "address": 1037256,
    "rows": 16,
    "cols": 16
+  },
+  {
+   "name": "Rail pressure maximum (single value)",
+   "address": 1038064,
+   "rows": 1,
+   "cols": 1
   },
   {
    "name": "Rail pressure maximum",

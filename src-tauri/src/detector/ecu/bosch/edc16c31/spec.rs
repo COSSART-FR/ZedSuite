@@ -346,3 +346,51 @@ pub const fn duty(i: usize) -> MapSpec {
         Some(AX_IQ),
     )
 }
+
+// ----------------------------------- EGR ----------------------------------
+
+pub const EGR_CUTOFF_NAMES: [&str; 2] = ["EGR cut-off quantity (upper)", "EGR cut-off quantity (lower)"];
+
+/// A2L `AirCtl_qHi_CUR` / `AirCtl_qLo_CUR`: hysteresis of the EGR switch-off
+/// at high injected quantity. Both at 0 = EGR always off.
+pub const fn egr_cutoff(i: usize) -> MapSpec {
+    spec(
+        EGR_CUTOFF_NAMES[i],
+        MapCategory::Egr,
+        "egr",
+        "Injected quantity above which the EGR is switched off (hysteresis), by engine speed; 0 everywhere = EGR off. The last axis points (10 rpm apart) are unused padding | X: Engine speed (rpm)",
+        "mg/st",
+        0.01,
+        false,
+        AX_RPM,
+        None,
+    )
+}
+
+// ------------------------------ single values -----------------------------
+
+/// A2L `EngPrt_nOvrSpd_C` (overspeed threshold): the engine speed cut. Same
+/// name as the VAG EDC16 families so the power estimate ends its curve there.
+pub const SVRL: MapSpec = spec(
+    "SVRL - RPM Limiter",
+    MapCategory::EngineTorqueLimiters,
+    "limiter",
+    "Engine speed cut-off (overspeed threshold), single value",
+    "rpm",
+    1.0,
+    false,
+    AX_RPM,
+    None,
+);
+
+pub const RAIL_MAX_SINGLE: MapSpec = spec(
+    "Rail pressure maximum (single value)",
+    MapCategory::InjectionSystem,
+    "rail",
+    "Maximum rail pressure set point, single value, stored right before the rail pressure maximum map",
+    "bar",
+    0.1,
+    false,
+    AX_RPM,
+    None,
+);

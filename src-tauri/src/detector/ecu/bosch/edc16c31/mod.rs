@@ -98,9 +98,48 @@ impl EDC16C31Detector {
         let mut out: Vec<DetectedMap> = classified.iter().map(|c| self.build(&c.spec, &c.block, &region)).collect();
         if let Some(addr) = self.find_svbl(data, &maps, &classified) {
             out.push(self.build_single(&spec::SVBL, addr, &region));
-            out.sort_by_key(|m| m.address);
         }
+        if let Some(addr) = self.find_svrl(data, &classified) {
+            out.push(self.build_single(&spec::SVRL, addr, &region));
+        }
+        if let Some(addr) = self.find_rail_max_single(data, &classified) {
+            out.push(self.build_single(&spec::RAIL_MAX_SINGLE, addr, &region));
+        }
+        out.sort_by_key(|m| m.address);
         out
+    }
+
+    /// The engine speed cut (A2L `EngPrt_nOvrSpd_C`). It opens the block of
+    /// torque-protection values that ends with the gear switch curve
+    /// (`EngPrt_swtTrqGear_CUR`, 8 points on the gear axis -1..6), itself
+    /// right before the first torque limiter curve of the set. The value
+    /// sits 0x16 bytes before that gear curve, followed by the default
+    /// atmospheric pressure (750 hPa). Same place on both reference
+    /// softwares (0xE6D5E on the 320d, where the "hardcut" tune writes 4300).
+    fn find_svrl(&self, data: &[u8], classified: &[families::Classified]) -> Option<usize> {
+        let first = classified.iter().find(|c| c.spec.name == spec::TORQUE_LIMITER_SET_NAMES[0])?;
+        let gear = first.block.addr.checked_sub(2 + 16 + 16)?;
+        let word = |a: usize| i16::from_be_bytes([data[a], data[a + 1]]);
+        if word(gear) != 8 || (0..8).any(|i| word(gear + 2 + 2 * i) != i as i16 - 1) {
+            return None;
+        }
+        let at = gear.checked_sub(0x16)?;
+        ((2500..=6500).contains(&word(at)) && (500..=1100).contains(&word(at + 2))).then_some(at)
+    }
+
+    /// The single maximum rail pressure value stored right before the 8-point
+    /// curve that precedes the rail pressure maximum map (0xFD18C on the
+    /// 320d, raised 1600 -> 1670 bar by its stage 1; 0xFD6F0 on the 330d).
+    fn find_rail_max_single(&self, data: &[u8], classified: &[families::Classified]) -> Option<usize> {
+        let map = classified.iter().find(|c| c.spec.name == spec::RAIL_MAX.name)?;
+        let curve = map.block.addr.checked_sub(2 + 16 + 16)?;
+        let word = |a: usize| i16::from_be_bytes([data[a], data[a + 1]]);
+        if word(curve) != 8 || !(0..7).all(|i| word(curve + 2 + 2 * i) < word(curve + 4 + 2 * i)) {
+            return None;
+        }
+        let at = curve.checked_sub(2)?;
+        let ceiling = if self.tuned { 22_000 } else { 20_000 };
+        (12_000..=ceiling).contains(&word(at)).then_some(at)
     }
 
     /// SVBL: the single value right before the block that follows the
@@ -352,6 +391,48 @@ pub(crate) mod tests {
         assert_eq!(c.x_axis_address, Some(0xE66AE + 2));
         assert_eq!(c.address, 0xE66AE + 2 + 42);
         assert!(c.y_axis_address.is_none());
+    }
+
+    fn egr_curve(top: i16) -> (Vec<i16>, Vec<i16>) {
+        // 20 real points then 5 dummy breakpoints 10 rpm apart
+        let mut x: Vec<i16> = (0..20).map(|i| i * 200).collect();
+        x.extend([4510, 4520, 4530, 4540, 4550]);
+        let z: Vec<i16> = (0..25).map(|i| if i < 10 { top } else { 0 }).collect();
+        (x, z)
+    }
+
+    #[test]
+    fn egr_cutoff_pair_is_named_upper_then_lower() {
+        let mut d = blank_dump();
+        let (x, z) = egr_curve(4000);
+        let off = write(&mut d, 0xE29EE, &kl(&x, &z));
+        let (x, z) = egr_curve(3700);
+        write(&mut d, off + 0x66, &kl(&x, &z));
+        let names: Vec<_> = EDC16C31Detector::new().detect(&d).iter().filter_map(|m| m.name.clone()).collect();
+        assert_eq!(names, ["EGR cut-off quantity (upper)", "EGR cut-off quantity (lower)"]);
+        // a single curve is not the pair
+        let mut one = blank_dump();
+        let (x, z) = egr_curve(4000);
+        write(&mut one, 0xE29EE, &kl(&x, &z));
+        assert!(EDC16C31Detector::new().detect(&one).is_empty());
+    }
+
+    #[test]
+    fn svrl_sits_before_the_gear_switch_curve_of_the_limiter_set() {
+        let mut d = blank_dump();
+        let gear = 0xE6D74;
+        // rev limit 5250, default atmospheric pressure 750 hPa, 0x16 before the gear curve
+        write(&mut d, gear - 0x16, &[0x14, 0x82, 0x02, 0xEE]);
+        let axis: Vec<i16> = (-1..=6).collect();
+        let mut off = write(&mut d, gear, &kl(&axis, &[0; 8]));
+        for top in [4000, 3900, 3800, 3700, 3600] {
+            let (x, z) = limiter_curve(800, top);
+            off = write(&mut d, off, &kl(&x, &z));
+        }
+        let maps = EDC16C31Detector::new().detect(&d);
+        let svrl = maps.iter().find(|m| m.name.as_deref() == Some("SVRL - RPM Limiter")).expect("svrl");
+        assert_eq!(svrl.address as usize, gear - 0x16);
+        assert_eq!(svrl.unit.as_deref(), Some("rpm"));
     }
 
     #[test]

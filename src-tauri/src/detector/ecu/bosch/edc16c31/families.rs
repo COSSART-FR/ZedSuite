@@ -200,6 +200,21 @@ fn is_duty(b: &Block, _l: Limits) -> bool {
 
 // ------------------------------ curve rules -------------------------------
 
+/// EGR cut-off hysteresis (A2L `AirCtl_qHi_CUR` / `AirCtl_qLo_CUR`): 25
+/// engine speed points whose unused tail is padded with dummy breakpoints
+/// 10 rpm apart (4510, 4520 ... 4650 on both reference softwares), quantity
+/// ×0.01 mg. Above the curve the EGR is switched off; an "EGR off" writes 0.
+fn is_egr_cutoff(b: &Block, l: Limits) -> bool {
+    let x = &b.first.values;
+    !b.is_2d()
+        && x.len() == 25
+        && (0..=1000).contains(&x[0])
+        && (4000..=5500).contains(&b.first.last())
+        && x[x.len() - 5..].windows(2).all(|w| w[1] - w[0] == 10)
+        && b.min() >= 0
+        && b.max() <= l.pick(10_000, 12_000)
+}
+
 fn is_torque_curve(b: &Block, l: Limits) -> bool {
     !b.is_2d()
         && is_rpm(&b.first)
@@ -290,7 +305,10 @@ pub fn classify(maps: &[Block], curves: &[Block], tuned: bool) -> Vec<Classified
     push(maps, exactly(maps, l, 2, is_rail_target), &spec::rail_target);
     push(maps, exactly(maps, l, 2, is_rail_limiter), &spec::rail_limiter);
     push(maps, exactly(maps, l, 1, is_rail_max), &|_| spec::RAIL_MAX);
-    push(maps, exactly(maps, l, 5, is_duty), &spec::duty);
+    // Five on the 320d, four on the 330d: the set is whatever answers,
+    // within that range.
+    let duty = matching(maps, l, is_duty);
+    push(maps, (4..=5).contains(&duty.len()).then_some(duty), &spec::duty);
 
     // Curves: the contiguous set of five first (a 19-point curve in a
     // 21-point slot leaves 8 bytes of padding, hence the gap), then the
@@ -301,6 +319,13 @@ pub fn classify(maps: &[Block], curves: &[Block], tuned: bool) -> Vec<Classified
         .filter(|i| !in_set.contains(i) && is_main_torque_limiter(&curves[*i], l))
         .collect();
     push(curves, set, &spec::torque_limiter_set);
+    // EGR cut-off: exactly two such curves, a few bytes apart, upper first.
+    let egr = matching(curves, l, is_egr_cutoff);
+    let egr_ok = egr.len() == 2 && {
+        let (a, b) = (&curves[egr[0]], &curves[egr[1]]);
+        b.addr >= a.end() && b.addr - a.end() <= 0x100
+    };
+    push(curves, egr_ok.then_some(egr), &spec::egr_cutoff);
     push(curves, (main.len() == 1).then_some(main), &|_| spec::TORQUE_LIMITER);
 
     out.sort_by_key(|c| c.block.addr);
